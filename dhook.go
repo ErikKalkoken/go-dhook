@@ -1,4 +1,27 @@
-// Package dhook provides types and functions for sending messages to Discord webhooks.
+/*
+Package dhook provides types and functions for sending messages to Discord webhooks.
+
+# Example
+
+The following shows how to use the library for sending a message to a Discord Webhook.
+
+	package main
+
+	import (
+		"net/http"
+
+		"github.com/ErikKalkoken/go-dhook"
+	)
+
+	func main() {
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, WEBHOOK_URL) // !! Please replace with a valid URL
+		err := wh.Execute(dhook.Message{Content: "Hello"})
+		if err != nil {
+			panic(err)
+		}
+	}
+*/
 package dhook
 
 import (

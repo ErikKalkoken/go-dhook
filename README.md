@@ -24,26 +24,3 @@ You can add this library to your current Go module with this command:
 ```sh
 go get github.com/ErikKalkoken/go-dhook
 ```
-
-## Example
-
-The following is an example on how to send a simple message with the library.
-
-```go
-package main
-
-import (
-	"net/http"
-
-	"github.com/ErikKalkoken/go-dhook"
-)
-
-func main() {
-	c := dhook.NewClient(http.DefaultClient)
-	wh := dhook.NewWebhook(c, WEBHOOK_URL) // !! Please replace with a valid URL
-	err := wh.Execute(dhook.Message{Content: "Hello"})
-	if err != nil {
-		panic(err)
-	}
-}
-```
