@@ -1,4 +1,4 @@
-package dhooks
+package dhook
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ErikKalkoken/go-dhooks/internal/rate"
+	"github.com/ErikKalkoken/go-dhook/internal/rate"
 )
 
 const (

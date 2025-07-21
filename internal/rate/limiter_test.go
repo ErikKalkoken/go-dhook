@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ErikKalkoken/go-dhooks/internal/rate"
+	"github.com/ErikKalkoken/go-dhook/internal/rate"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -1,4 +1,4 @@
-package dhooks_test
+package dhook_test
 
 import (
 	"fmt"
@@ -7,23 +7,23 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ErikKalkoken/go-dhooks"
+	"github.com/ErikKalkoken/go-dhook"
 )
 
 func TestMessageValidate(t *testing.T) {
 	cases := []struct {
-		m  dhooks.Message
+		m  dhook.Message
 		ok bool
 	}{
-		{dhooks.Message{Content: "content"}, true},
-		{dhooks.Message{}, false},
-		{dhooks.Message{Embeds: []dhooks.Embed{{Description: "description"}}}, true},
-		{dhooks.Message{Embeds: []dhooks.Embed{{Timestamp: "invalid"}}}, false},
-		{dhooks.Message{Embeds: []dhooks.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
-		{dhooks.Message{Content: makeStr(2001)}, false},
-		{dhooks.Message{Embeds: []dhooks.Embed{{Description: makeStr(4097)}}}, false},
+		{dhook.Message{Content: "content"}, true},
+		{dhook.Message{}, false},
+		{dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
+		{dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}}, false},
+		{dhook.Message{Embeds: []dhook.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
+		{dhook.Message{Content: makeStr(2001)}, false},
+		{dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}}, false},
 		{
-			dhooks.Message{Embeds: []dhooks.Embed{
+			dhook.Message{Embeds: []dhook.Embed{
 				{Description: makeStr(4096)},
 				{Description: makeStr(4096)},
 			}},

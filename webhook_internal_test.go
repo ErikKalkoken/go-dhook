@@ -1,4 +1,4 @@
-package dhooks
+package dhook
 
 import (
 	"net/http"

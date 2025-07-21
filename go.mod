@@ -1,4 +1,4 @@
-module github.com/ErikKalkoken/go-dhooks
+module github.com/ErikKalkoken/go-dhook
 
 go 1.23
 

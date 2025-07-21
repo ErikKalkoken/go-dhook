@@ -1,4 +1,4 @@
-package dhooks_test
+package dhook_test
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ErikKalkoken/go-dhooks"
+	"github.com/ErikKalkoken/go-dhook"
 )
 
 func TestWebhook(t *testing.T) {
@@ -22,9 +22,9 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(204, ""),
 		)
-		c := dhooks.NewClient(http.DefaultClient)
-		wh := dhooks.NewWebhook(c, url)
-		err := wh.Execute(dhooks.Message{Content: "content"})
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, url)
+		err := wh.Execute(dhook.Message{Content: "content"})
 		if assert.NoError(t, err) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
 		}
@@ -36,10 +36,10 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(400, ""),
 		)
-		c := dhooks.NewClient(http.DefaultClient)
-		wh := dhooks.NewWebhook(c, url)
-		err := wh.Execute(dhooks.Message{Content: "content"})
-		httpErr, _ := err.(dhooks.HTTPError)
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		httpErr, _ := err.(dhook.HTTPError)
 		assert.Equal(t, 400, httpErr.Status)
 	})
 	t.Run("should return http 429 as TooManyRequestsError", func(t *testing.T) {
@@ -54,10 +54,10 @@ func TestWebhook(t *testing.T) {
 					"global":      true,
 				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
 		)
-		c := dhooks.NewClient(http.DefaultClient)
-		wh := dhooks.NewWebhook(c, url)
-		err := wh.Execute(dhooks.Message{Content: "content"})
-		err2, _ := err.(dhooks.TooManyRequestsError)
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		err2, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 3*time.Second, err2.RetryAfter)
 		assert.True(t, err2.Global)
 	})
@@ -68,10 +68,10 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(429, "").HeaderSet(http.Header{"Retry-After": []string{"invalid"}}),
 		)
-		c := dhooks.NewClient(http.DefaultClient)
-		wh := dhooks.NewWebhook(c, url)
-		err := wh.Execute(dhooks.Message{Content: "content"})
-		httpErr, _ := err.(dhooks.TooManyRequestsError)
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
 	})
 	t.Run("should return http 429 as TooManyRequestsError and use default retry duration 2", func(t *testing.T) {
@@ -81,10 +81,10 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(429, ""),
 		)
-		c := dhooks.NewClient(http.DefaultClient)
-		wh := dhooks.NewWebhook(c, url)
-		err := wh.Execute(dhooks.Message{Content: "content"})
-		httpErr, _ := err.(dhooks.TooManyRequestsError)
+		c := dhook.NewClient(http.DefaultClient)
+		wh := dhook.NewWebhook(c, url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
 	})
 }
