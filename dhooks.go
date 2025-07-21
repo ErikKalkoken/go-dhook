@@ -23,7 +23,7 @@ type Client struct {
 	rl rate.RateLimited
 }
 
-// NewClient returns a new client for webhook. All webhook share the provided HTTP client.
+// NewClient returns a new client for webhook. All webhooks share the provided HTTP client.
 func NewClient(httpClient *http.Client) *Client {
 	s := &Client{
 		httpClient:    httpClient,
