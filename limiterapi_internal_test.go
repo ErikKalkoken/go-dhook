@@ -2,6 +2,7 @@ package dhook
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRateLimit(t *testing.T) {
+func TestRateLimitInfo(t *testing.T) {
 	t.Run("should extract rate limit from header", func(t *testing.T) {
 		header := http.Header{}
 		header.Set("X-RateLimit-Limit", "5")
@@ -34,7 +35,7 @@ func TestRateLimit(t *testing.T) {
 		}
 	})
 }
-func TestRateLimitLimitExceeded(t *testing.T) {
+func TestRateLimitInfo_LimitExceeded(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
 		rl   rateLimitInfo
@@ -52,7 +53,7 @@ func TestRateLimitLimitExceeded(t *testing.T) {
 	}
 }
 
-func TestUpdateFromHeader(t *testing.T) {
+func TestLimiterAPI_UpdateFromHeader(t *testing.T) {
 	t.Run("should decrease remaining if header is about same period and bucket", func(t *testing.T) {
 		l := limiterAPI{rl: rateLimitInfo{remaining: 2, resetAt: time.Unix(1470173023, 0).UTC(), bucket: "abcd1234"}}
 		header := http.Header{}
@@ -85,5 +86,20 @@ func TestUpdateFromHeader(t *testing.T) {
 		header.Set("X-RateLimit-Bucket", "abcd9234")
 		l.updateFromHeader(header)
 		assert.Equal(t, 4, l.rl.remaining)
+	})
+}
+
+func TestLimiterAPI_Wait(t *testing.T) {
+	t.Run("should not wait if limit not exceeded", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 1}}
+		l.logger = slog.Default()
+		got := l.wait()
+		assert.False(t, got)
+	})
+	t.Run("should wait if limit is exceeded", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 0, resetAt: time.Now().Add(200 * time.Millisecond)}}
+		l.logger = slog.Default()
+		got := l.wait()
+		assert.True(t, got)
 	})
 }

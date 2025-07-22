@@ -14,13 +14,17 @@ type limiterAPI struct {
 	logger Logger
 }
 
-func (l *limiterAPI) wait() {
+// wait will wait until a free slot is available if necessary
+// and report whether it has waited.
+func (l *limiterAPI) wait() bool {
 	l.logger.Debug("API rate limit", "info", l.rl)
-	if l.rl.limitExceeded(time.Now()) {
-		retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
-		l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
-		time.Sleep(retryAfter)
+	if !l.rl.limitExceeded(time.Now()) {
+		return false
 	}
+	retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
+	l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
+	time.Sleep(retryAfter)
+	return true
 }
 
 // updateFromHeader updates the limiter from a header.
