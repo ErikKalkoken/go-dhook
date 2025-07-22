@@ -1,5 +1,4 @@
-// Package rate provides types for dealing with rate limits.
-package rate
+package dhook
 
 import (
 	"log/slog"
@@ -7,9 +6,9 @@ import (
 	"time"
 )
 
-// Limiter represents a rate Limiter implementing the sliding log algorithm.
+// limiter represents a rate limiter implementing the sliding log algorithm.
 // This type is safe to use concurrently.
-type Limiter struct {
+type limiter struct {
 	max    int
 	name   string
 	period time.Duration
@@ -19,9 +18,9 @@ type Limiter struct {
 	index   int
 }
 
-// NewLimiter returns a new Limiter object.
-func NewLimiter(period time.Duration, max int, name string) *Limiter {
-	l := Limiter{
+// newLimiter returns a new Limiter object.
+func newLimiter(period time.Duration, max int, name string) *limiter {
+	l := limiter{
 		index:  0,
 		max:    max,
 		name:   name,
@@ -35,10 +34,10 @@ func NewLimiter(period time.Duration, max int, name string) *Limiter {
 	return &l
 }
 
-// Wait will register a new event.
+// wait will register a new event.
 // In case the current tick is exhausted it will block until the tick is reset.
-// The Wait duration will be rounded up to the next rate tick (e.g. 100ms if the rate is 10/sec)
-func (l *Limiter) Wait() {
+// The wait duration will be rounded up to the next rate tick (e.g. 100ms if the rate is 10/sec)
+func (l *limiter) wait() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	last := l.entries[l.index]

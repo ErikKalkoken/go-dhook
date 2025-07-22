@@ -27,8 +27,6 @@ package dhook
 import (
 	"net/http"
 	"time"
-
-	"github.com/ErikKalkoken/go-dhook/internal/rate"
 )
 
 const (
@@ -41,16 +39,16 @@ const (
 // The shared client enabled dealing with the global rate limit and ensures a shared http client is used.
 type Client struct {
 	httpClient    *http.Client
-	limiterGlobal *rate.Limiter
+	limiterGlobal *limiter
 
-	rl rate.RateLimited
+	rl rateLimited
 }
 
 // NewClient returns a new client for webhook. All webhooks share the provided HTTP client.
 func NewClient(httpClient *http.Client) *Client {
 	s := &Client{
 		httpClient:    httpClient,
-		limiterGlobal: rate.NewLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
+		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
 	}
 	return s
 }
