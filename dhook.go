@@ -1,6 +1,16 @@
 /*
 Package dhook provides types and functions for sending messages to Discord webhooks.
 
+The dhook package was specifically designed for sending a high volume of messages to Discord webhooks.
+A main challenge when sending many messages within a short time are to conform with Discord's rate limits.
+
+Dhook will automatically respect all rate limits by waiting until a slot is free before sending a new message.
+
+There are three different rate limits and this package will automatically respect them all:
+- Global rate limit (static)
+- Per-route rate limit (dynamic)
+- Webhook rate limit (static)
+
 # Example
 
 The following shows how to use the library for sending a message to a Discord Webhook.
@@ -21,34 +31,7 @@ The following shows how to use the library for sending a message to a Discord We
 			panic(err)
 		}
 	}
+
+	[Discord's rate limits]: https://discord.com/developers/docs/topics/rate-limits
 */
 package dhook
-
-import (
-	"net/http"
-	"time"
-)
-
-const (
-	globalRateLimitPeriod   = 1 * time.Second
-	globalRateLimitRequests = 50
-)
-
-// Client represents a shared client used by all webhooks to access the Discord API.
-//
-// The shared client enabled dealing with the global rate limit and ensures a shared http client is used.
-type Client struct {
-	httpClient    *http.Client
-	limiterGlobal *limiter
-
-	rl rateLimited
-}
-
-// NewClient returns a new client for webhook. All webhooks share the provided HTTP client.
-func NewClient(httpClient *http.Client) *Client {
-	s := &Client{
-		httpClient:    httpClient,
-		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
-	}
-	return s
-}

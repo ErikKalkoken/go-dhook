@@ -210,7 +210,7 @@ func length(s string) int {
 	return len([]rune(s))
 }
 
-// isValidPublicURL reports wether a raw URL is both a public and valid URL.
+// isValidPublicURL reports whether a raw URL is both a public and valid URL.
 func isValidPublicURL(rawURL string) bool {
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil {
