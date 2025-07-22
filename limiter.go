@@ -19,7 +19,7 @@ type limiter struct {
 }
 
 // newLimiter returns a new Limiter object.
-func newLimiter(period time.Duration, max int, name string, logger Logger) *limiter {
+func newLimiter(max int, period time.Duration, name string, logger Logger) *limiter {
 	l := limiter{
 		index:  0,
 		logger: logger,

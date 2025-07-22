@@ -107,24 +107,9 @@ func TestWebhook(t *testing.T) {
 				return httpmock.NewStringResponse(204, ""), nil
 			},
 		)
-		c := dhook.NewClient()
-		c.HTTPTimeout = 100 * time.Millisecond
+		c := dhook.NewClient(dhook.WithHTTPTimeout(100 * time.Millisecond))
 		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
-	})
-	t.Run("should return specific error when timeout config is invalid", func(t *testing.T) {
-		c := dhook.NewClient()
-		c.HTTPTimeout = 0
-		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
-		assert.ErrorIs(t, err, dhook.ErrInvalidConfiguration)
-	})
-	t.Run("should return specific error when timeout config is invalid 2", func(t *testing.T) {
-		c := dhook.NewClient()
-		c.HTTPTimeout = -1 * time.Second
-		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
-		assert.ErrorIs(t, err, dhook.ErrInvalidConfiguration)
 	})
 }

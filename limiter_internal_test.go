@@ -13,7 +13,7 @@ import (
 func TestLimiter(t *testing.T) {
 	t.Run("should allow first 10 calls without delay, but delay the 11st call to successive period", func(t *testing.T) {
 		log := make([]time.Time, 11)
-		l := newLimiter(100*time.Millisecond, 10, "", slog.Default())
+		l := newLimiter(10, 100*time.Millisecond, "", slog.Default())
 		start := time.Now()
 		for i := 0; i < 11; i++ {
 			l.wait()
@@ -24,7 +24,7 @@ func TestLimiter(t *testing.T) {
 	})
 	t.Run("should work concurrently", func(t *testing.T) {
 		log := make([]time.Time, 11)
-		l := newLimiter(100*time.Millisecond, 10, "", slog.Default())
+		l := newLimiter(10, 100*time.Millisecond, "", slog.Default())
 		start := time.Now()
 		var wg sync.WaitGroup
 		for i := 0; i < 11; i++ {
