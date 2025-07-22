@@ -1,20 +1,20 @@
-package rate
+package dhook
 
 import (
 	"sync"
 	"time"
 )
 
-// RateLimited holds information wether a client is being rate limited.
+// rateLimited holds information wether a client is being rate limited.
 // This type is safe to use concurrently.
-type RateLimited struct {
+type rateLimited struct {
 	mu      sync.Mutex
 	resetAt time.Time
 }
 
-// GetOrReset reports wether the rate limit is active and also return the duration until reset.
+// getOrReset reports wether the rate limit is active and also return the duration until reset.
 // Or resets the rate limit if it is expired.
-func (rl *RateLimited) GetOrReset() (bool, time.Duration) {
+func (rl *rateLimited) getOrReset() (bool, time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	if rl.resetAt.IsZero() {
@@ -28,7 +28,7 @@ func (rl *RateLimited) GetOrReset() (bool, time.Duration) {
 	return true, d
 }
 
-func (rl *RateLimited) Set(retryAfter time.Duration) {
+func (rl *rateLimited) set(retryAfter time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.resetAt = time.Now().UTC().Add(retryAfter)

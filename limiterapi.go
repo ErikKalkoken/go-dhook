@@ -23,14 +23,6 @@ func (l *limiterAPI) Wait() {
 	}
 }
 
-func roundUpDuration(d time.Duration, m time.Duration) time.Duration {
-	x := d.Round(m)
-	if x < d {
-		return x + m
-	}
-	return x
-}
-
 // UpdateFromHeader updates the limiter from a header.
 func (l *limiterAPI) UpdateFromHeader(h http.Header) error {
 	if l.rl.remaining > 0 {
