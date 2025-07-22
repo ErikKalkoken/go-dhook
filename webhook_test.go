@@ -23,7 +23,7 @@ func TestWebhook(t *testing.T) {
 			httpmock.NewStringResponder(204, ""),
 		)
 		c := dhook.NewClient()
-		wh := dhook.NewWebhook(c, url)
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		if assert.NoError(t, err) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
@@ -37,7 +37,7 @@ func TestWebhook(t *testing.T) {
 			httpmock.NewStringResponder(400, ""),
 		)
 		c := dhook.NewClient()
-		wh := dhook.NewWebhook(c, url)
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.HTTPError)
 		assert.Equal(t, 400, httpErr.Status)
@@ -55,7 +55,7 @@ func TestWebhook(t *testing.T) {
 				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
 		)
 		c := dhook.NewClient()
-		wh := dhook.NewWebhook(c, url)
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		err2, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 3*time.Second, err2.RetryAfter)
@@ -69,7 +69,7 @@ func TestWebhook(t *testing.T) {
 			httpmock.NewStringResponder(429, "").HeaderSet(http.Header{"Retry-After": []string{"invalid"}}),
 		)
 		c := dhook.NewClient()
-		wh := dhook.NewWebhook(c, url)
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
@@ -82,7 +82,7 @@ func TestWebhook(t *testing.T) {
 			httpmock.NewStringResponder(429, ""),
 		)
 		c := dhook.NewClient()
-		wh := dhook.NewWebhook(c, url)
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)

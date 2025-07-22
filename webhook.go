@@ -41,7 +41,8 @@ func (e HTTPError) Error() string {
 	return e.Message
 }
 
-// Webhook represents a Discord webhook which respects rate limits.
+// Webhook represents a Discord webhook.
+// Webhooks are safe for concurrent use by multiple goroutines.
 type Webhook struct {
 	client *Client
 	url    string
@@ -52,20 +53,9 @@ type Webhook struct {
 	limiterWebhook *limiter
 }
 
-// NewWebhook returns a new webhook.
-func NewWebhook(client *Client, url string) *Webhook {
-	wh := &Webhook{
-		client:         client,
-		url:            url,
-		limiterWebhook: newLimiter(webhookRateLimitPeriod, webhookRateLimitRequests, "webhook"),
-	}
-	return wh
-}
-
 // Execute posts a message to the configured webhook.
 //
-// Execute respects Discord's rate limits and will wait until there is a free slot to post the message.
-// Execute is thread safe.
+// Execute respects Discord's rate limits and will wait until there is a free slot to post the message if necessary.
 //
 // HTTP status codes of 400 or above are returns as [HTTPError],
 // except for 429s, which are returned as [TooManyRequestsError].
@@ -84,7 +74,7 @@ func (wh *Webhook) Execute(m Message) error {
 		return TooManyRequestsError{RetryAfter: retryAfter}
 	}
 	wh.client.limiterGlobal.wait()
-	wh.limiterAPI.Wait()
+	wh.limiterAPI.wait()
 	wh.limiterWebhook.wait()
 	slog.Debug("request", "url", wh.url, "body", string(dat))
 	resp, err := wh.client.httpClient.Post(wh.url, "application/json", bytes.NewBuffer(dat))
@@ -92,7 +82,7 @@ func (wh *Webhook) Execute(m Message) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if err := wh.limiterAPI.UpdateFromHeader(resp.Header); err != nil {
+	if err := wh.limiterAPI.updateFromHeader(resp.Header); err != nil {
 		slog.Error("Failed to update API limiter from header", "error", err)
 	}
 	body, err := io.ReadAll(resp.Body)

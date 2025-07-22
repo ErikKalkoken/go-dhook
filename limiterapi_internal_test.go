@@ -61,7 +61,7 @@ func TestUpdateFromHeader(t *testing.T) {
 		header.Set("X-RateLimit-Reset", "1470173023")
 		header.Set("X-RateLimit-Reset-After", "1.2")
 		header.Set("X-RateLimit-Bucket", "abcd1234")
-		l.UpdateFromHeader(header)
+		l.updateFromHeader(header)
 		assert.Equal(t, 1, l.rl.remaining)
 	})
 	t.Run("should update when header is about new period and same bucket", func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestUpdateFromHeader(t *testing.T) {
 		header.Set("X-RateLimit-Reset", "1470173023")
 		header.Set("X-RateLimit-Reset-After", "1.2")
 		header.Set("X-RateLimit-Bucket", "abcd1234")
-		l.UpdateFromHeader(header)
+		l.updateFromHeader(header)
 		assert.Equal(t, 4, l.rl.remaining)
 	})
 	t.Run("should update when header is about same period and different bucket", func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestUpdateFromHeader(t *testing.T) {
 		header.Set("X-RateLimit-Reset", "1470173022")
 		header.Set("X-RateLimit-Reset-After", "1.2")
 		header.Set("X-RateLimit-Bucket", "abcd9234")
-		l.UpdateFromHeader(header)
+		l.updateFromHeader(header)
 		assert.Equal(t, 4, l.rl.remaining)
 	})
 }

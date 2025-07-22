@@ -14,7 +14,7 @@ type limiterAPI struct {
 	rl rateLimitInfo
 }
 
-func (l *limiterAPI) Wait() {
+func (l *limiterAPI) wait() {
 	slog.Debug("API rate limit", "info", l.rl)
 	if l.rl.limitExceeded(time.Now()) {
 		retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
@@ -23,8 +23,8 @@ func (l *limiterAPI) Wait() {
 	}
 }
 
-// UpdateFromHeader updates the limiter from a header.
-func (l *limiterAPI) UpdateFromHeader(h http.Header) error {
+// updateFromHeader updates the limiter from a header.
+func (l *limiterAPI) updateFromHeader(h http.Header) error {
 	if l.rl.remaining > 0 {
 		l.rl.remaining--
 	}

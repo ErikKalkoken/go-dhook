@@ -23,19 +23,29 @@ type Client struct {
 // NewClient returns a new [Client].
 // A client can be configured with option functions (e.g. [WithHTTPClient]).
 func NewClient(options ...func(*Client)) *Client {
-	client := &Client{
+	c := &Client{
 		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
 		httpClient:    http.DefaultClient,
 	}
 	for _, o := range options {
-		o(client)
+		o(c)
 	}
-	return client
+	return c
 }
 
 // WithHTTPClient configures a [Client] with a custom HTTP client.
-func WithHTTPClient(c *http.Client) func(*Client) {
+func WithHTTPClient(httpClient *http.Client) func(*Client) {
 	return func(s *Client) {
-		s.httpClient = c
+		s.httpClient = httpClient
 	}
+}
+
+// NewWebhook returns a new webhook for a client.
+func (c *Client) NewWebhook(url string) *Webhook {
+	wh := &Webhook{
+		client:         c,
+		url:            url,
+		limiterWebhook: newLimiter(webhookRateLimitPeriod, webhookRateLimitRequests, "webhook"),
+	}
+	return wh
 }
