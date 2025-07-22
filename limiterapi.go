@@ -2,7 +2,6 @@ package dhook
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,14 +10,15 @@ import (
 // limiterAPI implements a limiter from the Discord API rate limit
 // as communicated by "X-RateLimit-" response headers.
 type limiterAPI struct {
-	rl rateLimitInfo
+	rl     rateLimitInfo
+	logger Logger
 }
 
 func (l *limiterAPI) wait() {
-	slog.Debug("API rate limit", "info", l.rl)
+	l.logger.Debug("API rate limit", "info", l.rl)
 	if l.rl.limitExceeded(time.Now()) {
 		retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
-		slog.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
+		l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
 		time.Sleep(retryAfter)
 	}
 }

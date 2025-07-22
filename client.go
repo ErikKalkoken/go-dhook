@@ -1,6 +1,7 @@
 package dhook
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -10,6 +11,14 @@ const (
 	globalRateLimitRequests = 50
 	httpTimeoutDefault      = 30 * time.Second
 )
+
+// Logger represents an interface for implementing a logger similar to slog.
+type Logger interface {
+	Debug(msg string, args ...any)
+	Error(msg string, args ...any)
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+}
 
 // Client represents a shared client used by all webhooks to access the Discord API.
 //
@@ -21,6 +30,9 @@ type Client struct {
 	// The default timeout for all HTTP requests. The default is 30 seconds.
 	HTTPTimeout time.Duration
 
+	// The logger used for all logging. Will use [slog.Default] when not set.
+	Logger Logger
+
 	limiterGlobal *limiter
 	rl            rateLimited
 }
@@ -30,9 +42,10 @@ type Client struct {
 // For custom configuration the fields can be set on the returned [Client] object.
 func NewClient() *Client {
 	c := &Client{
-		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
+		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global", slog.Default()),
 		HTTPClient:    http.DefaultClient,
 		HTTPTimeout:   httpTimeoutDefault,
+		Logger:        slog.Default(),
 	}
 	return c
 }
@@ -45,7 +58,8 @@ func (c *Client) NewWebhook(url string) *Webhook {
 	wh := &Webhook{
 		client:         c,
 		url:            url,
-		limiterWebhook: newLimiter(webhookRateLimitPeriod, webhookRateLimitRequests, "webhook"),
+		limiterWebhook: newLimiter(webhookRateLimitPeriod, webhookRateLimitRequests, "webhook", c.Logger),
 	}
+	wh.limiterAPI.logger = c.Logger
 	return wh
 }

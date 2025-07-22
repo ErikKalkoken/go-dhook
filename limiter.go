@@ -1,7 +1,6 @@
 package dhook
 
 import (
-	"log/slog"
 	"sync"
 	"time"
 )
@@ -9,6 +8,7 @@ import (
 // limiter represents a rate limiter implementing the sliding log algorithm.
 // This type is safe to use concurrently.
 type limiter struct {
+	logger Logger
 	max    int
 	name   string
 	period time.Duration
@@ -19,9 +19,10 @@ type limiter struct {
 }
 
 // newLimiter returns a new Limiter object.
-func newLimiter(period time.Duration, max int, name string) *limiter {
+func newLimiter(period time.Duration, max int, name string, logger Logger) *limiter {
 	l := limiter{
 		index:  0,
+		logger: logger,
 		max:    max,
 		name:   name,
 		period: period,
@@ -44,7 +45,7 @@ func (l *limiter) wait() {
 	next := last.Add(l.period)
 	if now := time.Now(); now.Before(next) {
 		d := roundUpDuration(next.Sub(now), l.period/time.Duration(l.max))
-		slog.Info("Rate limit exhausted. Waiting for reset", "retryAfter", d, "name", l.name)
+		l.logger.Info("Rate limit exhausted. Waiting for reset", "retryAfter", d, "name", l.name)
 		time.Sleep(d)
 	}
 	l.entries[l.index] = time.Now()
