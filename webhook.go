@@ -2,6 +2,7 @@ package dhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,8 +58,10 @@ type Webhook struct {
 //
 // Execute respects Discord's rate limits and will wait until there is a free slot to post the message if necessary.
 //
-// HTTP status codes of 400 or above are returns as [HTTPError],
+// HTTP status codes of 400 or above are returned as [HTTPError],
 // except for 429s, which are returned as [TooManyRequestsError].
+//
+// Returns [context.DeadlineExceeded] when the timeout is exceeded during the HTTP request to the Discord server.
 func (wh *Webhook) Execute(m Message) error {
 	slog.Debug("message", "detail", fmt.Sprintf("%+v", m))
 	dat, err := json.Marshal(m)
@@ -77,7 +80,15 @@ func (wh *Webhook) Execute(m Message) error {
 	wh.limiterAPI.wait()
 	wh.limiterWebhook.wait()
 	slog.Debug("request", "url", wh.url, "body", string(dat))
-	resp, err := wh.client.httpClient.Post(wh.url, "application/json", bytes.NewBuffer(dat))
+
+	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
