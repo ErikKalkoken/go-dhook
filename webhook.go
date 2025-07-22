@@ -63,6 +63,9 @@ type Webhook struct {
 //
 // Returns [context.DeadlineExceeded] when the timeout is exceeded during the HTTP request to the Discord server.
 func (wh *Webhook) Execute(m Message) error {
+	if wh.client.HTTPTimeout <= 0 {
+		return fmt.Errorf("timeout %s: %w", wh.client.HTTPTimeout, ErrInvalidConfiguration)
+	}
 	slog.Debug("message", "detail", fmt.Sprintf("%+v", m))
 	dat, err := json.Marshal(m)
 	if err != nil {
@@ -81,14 +84,14 @@ func (wh *Webhook) Execute(m Message) error {
 	wh.limiterWebhook.wait()
 	slog.Debug("request", "url", wh.url, "body", string(dat))
 
-	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), wh.client.HTTPTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := wh.client.httpClient.Do(req)
+	resp, err := wh.client.HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

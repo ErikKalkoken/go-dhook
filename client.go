@@ -15,46 +15,26 @@ const (
 //
 // The shared client enabled dealing with the global rate limit and ensures a shared http client is used.
 type Client struct {
-	httpClient    *http.Client
-	httpTimeout   time.Duration
-	limiterGlobal *limiter // Discord's global rate limit
+	// The HTTP client used by all webhooks. Will use [http.DefaultClient] when not set.
+	HTTPClient *http.Client
 
-	rl rateLimited
+	// The default timeout for all HTTP requests. The default is 30 seconds.
+	HTTPTimeout time.Duration
+
+	limiterGlobal *limiter
+	rl            rateLimited
 }
 
-// NewClient returns a new [Client]
+// NewClient returns a new [Client] with defaults.
 //
-// A client can be configured with option functions (e.g. [WithHTTPClient]).
-//
-// When no options are provided it returns a default client.
-// The default client uses [http.DefaultClient] as HTTP client and a timeout of 30 seconds.
-func NewClient(options ...func(*Client)) *Client {
+// For custom configuration the fields can be set on the returned [Client] object.
+func NewClient() *Client {
 	c := &Client{
 		limiterGlobal: newLimiter(globalRateLimitPeriod, globalRateLimitRequests, "global"),
-		httpClient:    http.DefaultClient,
-		httpTimeout:   httpTimeoutDefault,
-	}
-	for _, o := range options {
-		o(c)
+		HTTPClient:    http.DefaultClient,
+		HTTPTimeout:   httpTimeoutDefault,
 	}
 	return c
-}
-
-// WithHTTPClient sets a custom HTTP client to be used by all webhooks.
-func WithHTTPClient(httpClient *http.Client) func(*Client) {
-	return func(s *Client) {
-		s.httpClient = httpClient
-	}
-}
-
-// WithHTTPTimeout sets a timeout to be used by all HTTP requests.
-func WithHTTPTimeout(timeout time.Duration) func(*Client) {
-	if timeout <= 0 {
-		panic("timeout must have a positive value")
-	}
-	return func(s *Client) {
-		s.httpTimeout = timeout
-	}
 }
 
 // NewWebhook returns a new webhook for a client.

@@ -11,6 +11,9 @@ import (
 // Error representing an invalid message, e.g. a message with fields that are too long.
 var ErrInvalidMessage = errors.New("invalid message")
 
+// Error representing an invalid configuration, e.g. a negative HTTP timeout.
+var ErrInvalidConfiguration = errors.New("invalid configuration")
+
 // Discord message limit
 const (
 	authorNameLength    = 256
