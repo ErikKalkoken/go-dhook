@@ -1,7 +1,6 @@
 package dhook
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
@@ -10,17 +9,17 @@ import (
 
 func TestWebhook(t *testing.T) {
 	t.Run("should abort when rateLimitExceeded and not yet reset", func(t *testing.T) {
-		c := NewClient(http.DefaultClient)
-		wh := NewWebhook(c, "url")
+		c := NewClient()
+		wh := c.NewWebhook("url")
 		wh.rl.set(60 * time.Second)
 		err := wh.Execute(Message{Content: "content"})
 		err2, _ := err.(TooManyRequestsError)
 		assert.False(t, err2.Global)
 	})
 	t.Run("should abort when rateLimitExceeded and not yet reset", func(t *testing.T) {
-		c := NewClient(http.DefaultClient)
+		c := NewClient()
 		c.rl.set(60 * time.Second)
-		wh := NewWebhook(c, "url")
+		wh := c.NewWebhook("url")
 		err := wh.Execute(Message{Content: "content"})
 		err2, _ := err.(TooManyRequestsError)
 		assert.True(t, err2.Global)

@@ -1,6 +1,7 @@
 package dhook_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -17,13 +18,9 @@ func TestWebhook(t *testing.T) {
 	url := "https://www.example.com/hook"
 	t.Run("can post a message", func(t *testing.T) {
 		httpmock.Reset()
-		httpmock.RegisterResponder(
-			"POST",
-			url,
-			httpmock.NewStringResponder(204, ""),
-		)
-		c := dhook.NewClient(http.DefaultClient)
-		wh := dhook.NewWebhook(c, url)
+		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		if assert.NoError(t, err) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
@@ -36,8 +33,8 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(400, ""),
 		)
-		c := dhook.NewClient(http.DefaultClient)
-		wh := dhook.NewWebhook(c, url)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.HTTPError)
 		assert.Equal(t, 400, httpErr.Status)
@@ -54,8 +51,8 @@ func TestWebhook(t *testing.T) {
 					"global":      true,
 				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
 		)
-		c := dhook.NewClient(http.DefaultClient)
-		wh := dhook.NewWebhook(c, url)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		err2, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 3*time.Second, err2.RetryAfter)
@@ -68,8 +65,8 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(429, "").HeaderSet(http.Header{"Retry-After": []string{"invalid"}}),
 		)
-		c := dhook.NewClient(http.DefaultClient)
-		wh := dhook.NewWebhook(c, url)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
@@ -81,10 +78,38 @@ func TestWebhook(t *testing.T) {
 			url,
 			httpmock.NewStringResponder(429, ""),
 		)
-		c := dhook.NewClient(http.DefaultClient)
-		wh := dhook.NewWebhook(c, url)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
+	})
+	t.Run("should not timeout when not configured", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url,
+			func(req *http.Request) (*http.Response, error) {
+				time.Sleep(250 * time.Millisecond)
+				return httpmock.NewStringResponse(204, ""), nil
+			},
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		if assert.NoError(t, err) {
+			assert.Equal(t, 1, httpmock.GetTotalCallCount())
+		}
+	})
+	t.Run("should timeout when configured", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url,
+			func(req *http.Request) (*http.Response, error) {
+				time.Sleep(250 * time.Millisecond)
+				return httpmock.NewStringResponse(204, ""), nil
+			},
+		)
+		c := dhook.NewClient(dhook.WithHTTPTimeout(100 * time.Millisecond))
+		wh := c.NewWebhook(url)
+		err := wh.Execute(dhook.Message{Content: "content"})
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 }

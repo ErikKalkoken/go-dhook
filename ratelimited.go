@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-// rateLimited holds information wether a client is being rate limited.
+// rateLimited holds information whether a client is being rate limited.
 // This type is safe to use concurrently.
 type rateLimited struct {
 	mu      sync.Mutex
 	resetAt time.Time
 }
 
-// getOrReset reports wether the rate limit is active and also return the duration until reset.
+// getOrReset reports whether the rate limit is active and also return the duration until reset.
 // Or resets the rate limit if it is expired.
 func (rl *rateLimited) getOrReset() (bool, time.Duration) {
 	rl.mu.Lock()

@@ -3,7 +3,6 @@ package dhook
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"time"
 )
@@ -135,10 +134,18 @@ func (ea EmbedAuthor) validate() error {
 	if length(ea.Name) > authorNameLength {
 		return fmt.Errorf("embed author name too long: %w", ErrInvalidMessage)
 	}
-	if ea.IconURL != "" && !isValidPublicURL(ea.IconURL) {
+	ok, err := isValidPublicURL(ea.IconURL)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("embed author icon URL not valid: %w", ErrInvalidMessage)
 	}
-	if ea.URL != "" && !isValidPublicURL(ea.URL) {
+	ok, err = isValidPublicURL(ea.URL)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("embed author URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
@@ -175,7 +182,11 @@ func (ef EmbedFooter) validate() error {
 	if length(ef.Text) > footerTextLength {
 		return fmt.Errorf("embed footer text too long: %w", ErrInvalidMessage)
 	}
-	if ef.IconURL != "" && !isValidPublicURL(ef.IconURL) {
+	ok, err := isValidPublicURL(ef.IconURL)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("footer icon URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
@@ -187,7 +198,11 @@ type EmbedImage struct {
 }
 
 func (ei EmbedImage) validate() error {
-	if ei.URL != "" && !isValidPublicURL(ei.URL) {
+	ok, err := isValidPublicURL(ei.URL)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("embed image URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
@@ -199,7 +214,11 @@ type EmbedThumbnail struct {
 }
 
 func (et EmbedThumbnail) validate() error {
-	if et.URL != "" && !isValidPublicURL(et.URL) {
+	ok, err := isValidPublicURL(et.URL)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("embed thumbnail URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
@@ -210,15 +229,17 @@ func length(s string) int {
 	return len([]rune(s))
 }
 
-// isValidPublicURL reports wether a raw URL is both a public and valid URL.
-func isValidPublicURL(rawURL string) bool {
+// isValidPublicURL reports whether a raw URL is both a public URL and valid.
+func isValidPublicURL(rawURL string) (bool, error) {
+	if rawURL == "" {
+		return true, nil
+	}
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		slog.Warn("error when trying to parse URL", "url", rawURL, "err", err)
-		return false
+		return false, fmt.Errorf("parsing public URL: %s: %w", rawURL, err)
 	}
 	if u.Scheme == "https" || u.Scheme == "http" {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
