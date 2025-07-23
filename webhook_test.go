@@ -12,7 +12,7 @@ import (
 	"github.com/ErikKalkoken/go-dhook"
 )
 
-func TestWebhook(t *testing.T) {
+func TestWebhook_Execute(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 	url := "https://www.example.com/hook"
@@ -111,5 +111,10 @@ func TestWebhook(t *testing.T) {
 		wh := c.NewWebhook(url)
 		err := wh.Execute(dhook.Message{Content: "content"})
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+	t.Run("should return error when webhook was not initialized", func(t *testing.T) {
+		wh := dhook.Webhook{}
+		err := wh.Execute(dhook.Message{Content: "content"})
+		assert.ErrorIs(t, err, dhook.ErrInvalidConfiguration)
 	})
 }

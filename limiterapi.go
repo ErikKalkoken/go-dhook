@@ -56,6 +56,9 @@ type rateLimitInfo struct {
 	timestamp  time.Time
 }
 
+// newRateLimitInfo returns a new rateLimitInfo from a header.
+// Will return an empty rateLimitInfo when the rate limit headers are missing, incomplete.
+// will return an error when the rate limit headers are invalid.
 func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	var r rateLimitInfo
 	var err error
@@ -79,22 +82,25 @@ func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	if bucket == "" {
 		return r, nil
 	}
+	wrapErr := func(err error) error {
+		return fmt.Errorf("newRateLimitInfo invalid header %+v : %w", h, err)
+	}
 	r.limit, err = strconv.Atoi(limit)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.remaining, err = strconv.Atoi(remaining)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	resetEpoch, err := strconv.Atoi(reset)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.resetAt = time.Unix(int64(resetEpoch), 0).UTC()
 	r.resetAfter, err = strconv.ParseFloat(resetAfter, 64)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.bucket = bucket
 	r.timestamp = time.Now().UTC()

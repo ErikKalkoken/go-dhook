@@ -163,6 +163,9 @@ func (ef EmbedField) size() int {
 }
 
 func (ef EmbedField) validate() error {
+	if ef.Name == "" {
+		return fmt.Errorf("embed field name not defined: %w", ErrInvalidMessage)
+	}
 	if length(ef.Name) > fieldNameLength {
 		return fmt.Errorf("embed field name too long: %w", ErrInvalidMessage)
 	}

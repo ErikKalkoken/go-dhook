@@ -10,28 +10,122 @@ import (
 	"github.com/ErikKalkoken/go-dhook"
 )
 
-func TestMessageValidate(t *testing.T) {
+func TestMessage_Validate(t *testing.T) {
 	cases := []struct {
-		m  dhook.Message
-		ok bool
+		name string
+		m    dhook.Message
+		ok   bool
 	}{
-		{dhook.Message{Content: "content"}, true},
-		{dhook.Message{}, false},
-		{dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
-		{dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}}, false},
-		{dhook.Message{Embeds: []dhook.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
-		{dhook.Message{Content: makeStr(2001)}, false},
-		{dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}}, false},
+		{"minimal", dhook.Message{Content: "content"}, true},
+		{"minimal embed", dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
+		{"", dhook.Message{Embeds: []dhook.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
+
+		{"empty", dhook.Message{}, false},
+		{"invalid timestamp", dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}}, false},
+		{"content too long", dhook.Message{Content: makeStr(2001)}, false},
+		{"embed too large", dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}}, false},
 		{
+			"combined embeds too large",
 			dhook.Message{Embeds: []dhook.Embed{
 				{Description: makeStr(4096)},
 				{Description: makeStr(4096)},
 			}},
 			false,
 		},
+		{"username too long", dhook.Message{Content: "content", Username: makeStr(81)}, false},
+		{
+			"too many embeds",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+				{Description: "description"},
+			}},
+			false,
+		},
+		{
+			"embed with too many fields",
+			dhook.Message{Embeds: []dhook.Embed{
+				{
+					Description: "description",
+					Fields: []dhook.EmbedField{
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+						{Name: "name", Value: "value"},
+					},
+				},
+			}},
+			false,
+		},
+		{
+			"field name too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{
+					Description: "description",
+					Fields: []dhook.EmbedField{
+						{Name: makeStr(257), Value: "value"},
+					},
+				},
+			}},
+			false,
+		},
+		{
+			"field value too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{
+					Description: "description",
+					Fields: []dhook.EmbedField{
+						{Name: "name", Value: makeStr(257)},
+					},
+				},
+			}},
+			false,
+		},
+		{
+			"field name missing",
+			dhook.Message{Embeds: []dhook.Embed{
+				{
+					Description: "description",
+					Fields: []dhook.EmbedField{
+						{Name: "", Value: "value"},
+					},
+				},
+			}},
+			false,
+		},
 	}
-	for i, tc := range cases {
-		t.Run(fmt.Sprintf("validate message #%d", i+1), func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf(tc.name), func(t *testing.T) {
 			err := tc.m.Validate()
 			if tc.ok {
 				assert.NoError(t, err)

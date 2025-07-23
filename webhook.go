@@ -65,7 +65,7 @@ type Webhook struct {
 // Returns [context.DeadlineExceeded] when the timeout is exceeded during the HTTP request to the Discord server.
 func (wh *Webhook) Execute(m Message) error {
 	if wh.client == nil {
-		return fmt.Errorf("can not use Webhook without initialization: %w", ErrInvalidConfiguration)
+		return fmt.Errorf("Webhook not inititalized: %w", ErrInvalidConfiguration)
 	}
 	wh.client.logger.Debug("message", "detail", fmt.Sprintf("%+v", m))
 	dat, err := json.Marshal(m)
