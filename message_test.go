@@ -21,18 +21,12 @@ func TestMessage_Validate(t *testing.T) {
 
 		// valid embeds
 		{"minimal embed", dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
-		{"", dhook.Message{Embeds: []dhook.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
 
 		// invalid messages
 		{"empty", dhook.Message{}, false},
 		{"content too long", dhook.Message{Content: makeStr(2001)}, false},
 
 		// invalid embeds
-		{
-			"invalid timestamp",
-			dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}},
-			false,
-		},
 		{
 			"embed too large",
 			dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}},

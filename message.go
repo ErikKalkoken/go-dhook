@@ -71,7 +71,7 @@ type Embed struct {
 	Fields      []EmbedField   `json:"fields,omitempty"`
 	Footer      EmbedFooter    `json:"footer,omitempty"`
 	Image       EmbedImage     `json:"image,omitempty"`
-	Timestamp   string         `json:"timestamp,omitempty"`
+	Timestamp   time.Time      `json:"timestamp,omitempty"`
 	Title       string         `json:"title,omitempty"`
 	Thumbnail   EmbedThumbnail `json:"thumbnail,omitempty"`
 	URL         string         `json:"url,omitempty"`
@@ -101,12 +101,6 @@ func (em Embed) validate() error {
 	}
 	if length(em.Title) > titleLength {
 		return fmt.Errorf("embed title too long: %w", ErrInvalidMessage)
-	}
-	if em.Timestamp != "" {
-		_, err := time.Parse(time.RFC3339, em.Timestamp)
-		if err != nil {
-			return fmt.Errorf("embed timestamp does not conform to RFC3339: %w", ErrInvalidMessage)
-		}
 	}
 	if err := em.Author.validate(); err != nil {
 		return err
