@@ -8,8 +8,13 @@ import (
 )
 
 // Color is a named Discord color for embeds.
-// It is implemented as value of an RGB hex color.
-// Source: https://gist.github.com/thomasbnt/b6f455e2c7d743b796917fa3c205f812
+//
+// It is implemented as an integer value representing an RGB hex color.
+// The zero value means no color.
+//
+// Source: [Code colors for embed discord.js]
+//
+// [Code colors for embed discord.js]: https://gist.github.com/thomasbnt/b6f455e2c7d743b796917fa3c205f812
 type Color uint64
 
 const (
@@ -37,6 +42,7 @@ const (
 	ColorLightGrey         Color = 12370112 // #BCC0C0
 	ColorLuminousVividPink Color = 15277667 // #E91E63
 	ColorNavy              Color = 3426654  // #34495E
+	ColorNone              Color = 0
 	ColorNotQuiteBlack     Color = 2303786  // #23272A
 	ColorOrange            Color = 15105570 // #E67E22
 	ColorPurple            Color = 10181046 // #9B59B6
