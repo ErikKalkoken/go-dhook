@@ -117,4 +117,43 @@ func TestWebhook_Execute(t *testing.T) {
 		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		assert.ErrorIs(t, err, dhook.ErrInvalidConfiguration)
 	})
+	t.Run("should return error when message is invalid", func(t *testing.T) {
+		c := dhook.NewClient(dhook.WithHTTPTimeout(100 * time.Millisecond))
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{}, nil)
+		assert.ErrorIs(t, err, dhook.ErrInvalidMessage)
+	})
+	t.Run("message with wait option returns response body", func(t *testing.T) {
+		httpmock.Reset()
+		url2 := url + "?wait=1"
+		httpmock.RegisterResponder("POST", url2, httpmock.NewStringResponder(200, "message"))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		b, err := wh.Execute(dhook.Message{Content: "content"}, &dhook.WebhookExecuteOptions{
+			Wait: true,
+		})
+		if assert.NoError(t, err) {
+			info := httpmock.GetCallCountInfo()
+			assert.Equal(t, 1, info["POST "+url2])
+		}
+		assert.Equal(t, "message", string(b))
+	})
+}
+
+func TestTooManyRequestsError_Error(t *testing.T) {
+	t.Run("return normal error text", func(t *testing.T) {
+		err := dhook.TooManyRequestsError{}
+		assert.Equal(t, "rate limit exceeded", err.Error())
+	})
+	t.Run("return global error text", func(t *testing.T) {
+		err := dhook.TooManyRequestsError{Global: true}
+		assert.Equal(t, "global rate limit exceeded", err.Error())
+	})
+}
+
+func TestHTTPError_Error(t *testing.T) {
+	err := dhook.HTTPError{
+		Message: "message",
+	}
+	assert.Equal(t, "message", err.Error())
 }

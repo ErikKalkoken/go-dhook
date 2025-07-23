@@ -1,7 +1,6 @@
 package dhook_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -170,7 +169,7 @@ func TestMessage_Validate(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(fmt.Sprintf(tc.name), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			err := tc.m.Validate()
 			if tc.ok {
 				assert.NoError(t, err)

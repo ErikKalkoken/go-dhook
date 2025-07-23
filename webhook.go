@@ -63,20 +63,28 @@ type WebhookExecuteOptions struct {
 
 // Execute posts a message to the configured webhook and optionally returns the message created by Discord.
 //
-// Execute respects Discord's rate limits and will wait until there is a free slot to post the message if necessary.
-// Options can be provided through opt. Opt can be left nil to provide no options.
-// Execute will only return the message created by Discord when the Wait option is enabled.
+// Options can be provided through opt or opt can be nil for executing without options.
+// Execute will only return a response from Discord (e.g. the message created) when the Wait option is enabled.
 //
-// Returned key errors:
+// Execute will automatically comply with Discord's rate limits by waiting
+// until there is a free slot to post the message if necessary.
+//
+// Execute will check that a message is not empty, but not do a full validation.
+// A full validation can be performed with [Message.Validate].
+//
+// Common errors returned:
 //   - [HTTPError]: Discord returned HTTP status codes of 400 or above (except 429)
 //   - [TooManyRequestsError]: Discord returned status HTTP status code 429
 //   - [context.DeadlineExceeded]: Timeout is exceeded during the HTTP request to Discord
-func (wh *Webhook) Execute(m Message, opt *WebhookExecuteOptions) ([]byte, error) {
+func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte, error) {
 	if wh.client == nil {
 		return nil, fmt.Errorf("Webhook not initialized: %w", ErrInvalidConfiguration)
 	}
-	wh.client.logger.Debug("message", "detail", fmt.Sprintf("%+v", m))
-	dat, err := json.Marshal(m)
+	wh.client.logger.Debug("message", "detail", fmt.Sprintf("%+v", message))
+	if message.Content == "" && len(message.Embeds) == 0 {
+		return nil, fmt.Errorf("message must have Content or Embed: %w", ErrInvalidMessage)
+	}
+	dat, err := json.Marshal(message)
 	if err != nil {
 		return nil, err
 	}

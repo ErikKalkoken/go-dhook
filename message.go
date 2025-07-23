@@ -7,16 +7,17 @@ import (
 	"time"
 )
 
-// Color is a named Discord color for embeds.
+// Color represents a color for Discord embeds.
 //
 // It is implemented as an integer value representing an RGB hex color.
 // The zero value means no color.
+type Color uint64
+
+// A named [Color].
 //
 // Source: [Code colors for embed discord.js]
 //
 // [Code colors for embed discord.js]: https://gist.github.com/thomasbnt/b6f455e2c7d743b796917fa3c205f812
-type Color uint64
-
 const (
 	ColorAqua              Color = 1752220  // #1ABC9C
 	ColorBlack             Color = 2303786  // #23272A
@@ -80,7 +81,7 @@ type Message struct {
 // Validate checks the message against known Discord limits and requirements
 // It returns an [ErrInvalidMessage] error in case a limit is violated.
 //
-// Validating messages before sending helps to prevent getting 400 Bad Request reponse from Discord.
+// Validating messages before sending helps to prevent getting 400 Bad Request response from Discord.
 func (m Message) Validate() error {
 	if len(m.Content) == 0 && len(m.Embeds) == 0 {
 		return fmt.Errorf("need to contain content or embeds: %w", ErrInvalidMessage)

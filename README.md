@@ -22,6 +22,7 @@ Key features:
 - Full support of Discord embeds
 - Named colors
 - Unit tested
+- No dependencies (except for tests)
 
 You can add this library to your current Go module with this command:
 
