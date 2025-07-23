@@ -71,9 +71,10 @@ type Message struct {
 	Username        string  `json:"username,omitempty"`
 }
 
-// Validate checks the message against known Discord limits and requirements.
-// Messages not passing the validation will usually lead to 400 Bad Request responses from Discord.
-// Returns an [ErrInvalidMessage] error in case a limit is violated.
+// Validate checks the message against known Discord limits and requirements
+// It returns an [ErrInvalidMessage] error in case a limit is violated.
+//
+// Validating messages before sending helps to prevent getting 400 Bad Request reponse from Discord.
 func (m Message) Validate() error {
 	if len(m.Content) == 0 && len(m.Embeds) == 0 {
 		return fmt.Errorf("need to contain content or embeds: %w", ErrInvalidMessage)
@@ -102,16 +103,16 @@ func (m Message) Validate() error {
 
 // Embed represents a Discord Embed.
 type Embed struct {
-	Author      EmbedAuthor    `json:"author,omitempty"`
+	Author      EmbedAuthor    `json:"author,omitzero"`
 	Color       Color          `json:"color,omitempty"`
 	Description string         `json:"description,omitempty"`
 	Fields      []EmbedField   `json:"fields,omitempty"`
-	Footer      EmbedFooter    `json:"footer,omitempty"`
-	Image       EmbedImage     `json:"image,omitempty"`
-	Provider    EmbedProvider  `json:"provider,omitempty"`
-	Timestamp   time.Time      `json:"timestamp,omitempty"`
+	Footer      EmbedFooter    `json:"footer,omitzero"`
+	Image       EmbedImage     `json:"image,omitzero"`
+	Provider    EmbedProvider  `json:"provider,omitzero"`
+	Timestamp   time.Time      `json:"timestamp,omitzero"`
 	Title       string         `json:"title,omitempty"`
-	Thumbnail   EmbedThumbnail `json:"thumbnail,omitempty"`
+	Thumbnail   EmbedThumbnail `json:"thumbnail,omitzero"`
 	URL         string         `json:"url,omitempty"`
 }
 
