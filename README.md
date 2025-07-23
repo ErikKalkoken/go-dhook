@@ -17,10 +17,10 @@ Key features:
 - Automatically respects Discord rate limits
 - Prevents rate limit escalation when rate limited
 - Message validation
-- Safe for concurrent use by multiple goroutines.
-- Full support of Discord embeds
 - Build-in logging
 - Configurable client
+- Full support of Discord embeds
+- Named colors
 - Unit tested
 
 You can add this library to your current Go module with this command:

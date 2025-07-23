@@ -7,8 +7,43 @@ import (
 	"time"
 )
 
-// Error representing an invalid message, e.g. a message with fields that are too long.
-var ErrInvalidMessage = errors.New("invalid message")
+// Color is a named Discord color for embeds.
+// It is implemented as value of an RGB hex color.
+// Source: https://gist.github.com/thomasbnt/b6f455e2c7d743b796917fa3c205f812
+type Color uint64
+
+const (
+	ColorAqua              Color = 1752220  // #1ABC9C
+	ColorBlack             Color = 2303786  // #23272A
+	ColorBlue              Color = 3447003  // #3498DB
+	ColorBlurple           Color = 5793266  // #5865F2
+	ColorDarkAqua          Color = 1146986  // #11806A
+	ColorDarkBlue          Color = 2123412  // #206694
+	ColorDarkButNotBlack   Color = 2895667  // #2C2F33
+	ColorDarkerGrey        Color = 8359053  // #7F8C8D
+	ColorDarkGold          Color = 12745742 // #C27C0E
+	ColorDarkGreen         Color = 2067276  // #1F8B4C
+	ColorDarkGrey          Color = 9936031  // #979C9F
+	ColorDarkNavy          Color = 2899536  // #2C3E50
+	ColorDarkOrange        Color = 11027200 // #A84300
+	ColorDarkPurple        Color = 7419530  // #71368A
+	ColorDarkRed           Color = 10038562 // #992D22
+	ColorDarkVividPink     Color = 11342935 // #AD1457
+	ColorFuchsia           Color = 15418782 // #EB459E
+	ColorGold              Color = 15844367 // #F1C40F
+	ColorGreen             Color = 5763719  // #57F287
+	ColorGrey              Color = 9807270  // #95A5A6
+	ColorGreyple           Color = 10070709 // #99AAb5
+	ColorLightGrey         Color = 12370112 // #BCC0C0
+	ColorLuminousVividPink Color = 15277667 // #E91E63
+	ColorNavy              Color = 3426654  // #34495E
+	ColorNotQuiteBlack     Color = 2303786  // #23272A
+	ColorOrange            Color = 15105570 // #E67E22
+	ColorPurple            Color = 10181046 // #9B59B6
+	ColorRed               Color = 15548997 // #ED4245
+	ColorWhite             Color = 16777215 // #FFFFFF
+	ColorYellow            Color = 16705372 // #FEE75C
+)
 
 // Discord message limit
 const (
@@ -24,6 +59,9 @@ const (
 	titleLength         = 256
 	usernameLength      = 80
 )
+
+// Error representing an invalid message, e.g. a message with fields that are too long.
+var ErrInvalidMessage = errors.New("invalid message")
 
 // Message represents a message that can be send to a Discord webhook.
 type Message struct {
@@ -66,7 +104,7 @@ func (m Message) Validate() error {
 // Embed represents a Discord Embed.
 type Embed struct {
 	Author      EmbedAuthor    `json:"author,omitempty"`
-	Color       int            `json:"color,omitempty"`
+	Color       Color          `json:"color,omitempty"`
 	Description string         `json:"description,omitempty"`
 	Fields      []EmbedField   `json:"fields,omitempty"`
 	Footer      EmbedFooter    `json:"footer,omitempty"`
