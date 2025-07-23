@@ -45,14 +45,13 @@ const (
 	ColorYellow            Color = 16705372 // #FEE75C
 )
 
-// Discord message limit
+// Discord message limits.
 const (
-	authorNameLength    = 256
+	nameLength          = 256
 	contentLength       = 2000
 	descriptionLength   = 4096
 	embedCombinedLength = 6000
 	embedsQuantity      = 10
-	fieldNameLength     = 256
 	fieldsQuantity      = 25
 	fieldValueLength    = 1024
 	footerTextLength    = 2048
@@ -109,6 +108,7 @@ type Embed struct {
 	Fields      []EmbedField   `json:"fields,omitempty"`
 	Footer      EmbedFooter    `json:"footer,omitempty"`
 	Image       EmbedImage     `json:"image,omitempty"`
+	Provider    EmbedProvider  `json:"provider,omitempty"`
 	Timestamp   time.Time      `json:"timestamp,omitempty"`
 	Title       string         `json:"title,omitempty"`
 	Thumbnail   EmbedThumbnail `json:"thumbnail,omitempty"`
@@ -149,6 +149,9 @@ func (em Embed) validate() error {
 	if err := em.Image.validate(); err != nil {
 		return err
 	}
+	if err := em.Provider.validate(); err != nil {
+		return err
+	}
 	if err := em.Thumbnail.validate(); err != nil {
 		return err
 	}
@@ -163,7 +166,7 @@ type EmbedAuthor struct {
 }
 
 func (ea EmbedAuthor) validate() error {
-	if length(ea.Name) > authorNameLength {
+	if length(ea.Name) > nameLength {
 		return fmt.Errorf("embed author name too long: %w", ErrInvalidMessage)
 	}
 	ok, err := isValidPublicURL(ea.IconURL)
@@ -187,7 +190,7 @@ func (ea EmbedAuthor) validate() error {
 type EmbedField struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
-	Inline bool   `json:"inline,omitempty"`
+	Inline bool   `json:"inline"`
 }
 
 func (ef EmbedField) size() int {
@@ -198,10 +201,10 @@ func (ef EmbedField) validate() error {
 	if ef.Name == "" {
 		return fmt.Errorf("embed field name not defined: %w", ErrInvalidMessage)
 	}
-	if length(ef.Name) > fieldNameLength {
+	if length(ef.Name) > nameLength {
 		return fmt.Errorf("embed field name too long: %w", ErrInvalidMessage)
 	}
-	if length(ef.Value) > fieldNameLength {
+	if length(ef.Value) > fieldValueLength {
 		return fmt.Errorf("embed field value too long: %w", ErrInvalidMessage)
 	}
 	return nil
@@ -239,6 +242,26 @@ func (ei EmbedImage) validate() error {
 	}
 	if !ok {
 		return fmt.Errorf("embed image URL not valid: %w", ErrInvalidMessage)
+	}
+	return nil
+}
+
+// EmbedProvider represents a provider of an [Embed].
+type EmbedProvider struct {
+	Name string `json:"name,omitempty"`
+	URL  string `json:"icon_url,omitempty"`
+}
+
+func (ef EmbedProvider) validate() error {
+	if length(ef.Name) > nameLength {
+		return fmt.Errorf("provider footer text too long: %w", ErrInvalidMessage)
+	}
+	ok, err := isValidPublicURL(ef.URL)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("provider icon URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
 }

@@ -55,46 +55,58 @@ type Webhook struct {
 	limiterWebhook *limiter
 }
 
-// Execute posts a message to the configured webhook.
+type WebhookExecuteOptions struct {
+	// Waits for server confirmation of message send before response
+	// and returns the created message body.
+	Wait bool
+}
+
+// Execute posts a message to the configured webhook and optionally returns the message created by Discord.
 //
 // Execute respects Discord's rate limits and will wait until there is a free slot to post the message if necessary.
+// Options can be provided through opt. Opt can be left nil to provide no options.
+// Execute will only return the message created by Discord when the Wait option is enabled.
 //
-// HTTP status codes of 400 or above are returned as [HTTPError],
-// except for 429s, which are returned as [TooManyRequestsError].
-//
-// Returns [context.DeadlineExceeded] when the timeout is exceeded during the HTTP request to the Discord server.
-func (wh *Webhook) Execute(m Message) error {
+// Returned key errors:
+//   - [HTTPError]: Discord returned HTTP status codes of 400 or above (except 429)
+//   - [TooManyRequestsError]: Discord returned status HTTP status code 429
+//   - [context.DeadlineExceeded]: Timeout is exceeded during the HTTP request to Discord
+func (wh *Webhook) Execute(m Message, opt *WebhookExecuteOptions) ([]byte, error) {
 	if wh.client == nil {
-		return fmt.Errorf("Webhook not initialized: %w", ErrInvalidConfiguration)
+		return nil, fmt.Errorf("Webhook not initialized: %w", ErrInvalidConfiguration)
 	}
 	wh.client.logger.Debug("message", "detail", fmt.Sprintf("%+v", m))
 	dat, err := json.Marshal(m)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
-		return TooManyRequestsError{RetryAfter: retryAfter, Global: true}
+		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
 	wh.mu.Lock()
 	defer wh.mu.Unlock()
 	if isActive, retryAfter := wh.rl.getOrReset(); isActive {
-		return TooManyRequestsError{RetryAfter: retryAfter}
+		return nil, TooManyRequestsError{RetryAfter: retryAfter}
 	}
 	wh.client.limiterGlobal.wait()
 	wh.limiterAPI.wait()
 	wh.limiterWebhook.wait()
-	wh.client.logger.Debug("request", "url", wh.url, "body", string(dat))
 
+	url := wh.url
+	if opt != nil && opt.Wait {
+		url += "?wait=1"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(dat))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	wh.client.logger.Debug("request", "url", url, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if err := wh.limiterAPI.updateFromHeader(resp.Header); err != nil {
@@ -102,13 +114,13 @@ func (wh *Webhook) Execute(m Message) error {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	wh.client.logger.Debug("response", "url", wh.url, "status", resp.Status, "headers", resp.Header, "body", string(body))
+	wh.client.logger.Debug("response", "url", url, "status", resp.Status, "headers", resp.Header, "body", string(body))
 	if resp.StatusCode >= http.StatusBadRequest {
-		wh.client.logger.Warn("response", "url", wh.url, "status", resp.Status)
+		wh.client.logger.Warn("response", "url", url, "status", resp.Status)
 	} else {
-		wh.client.logger.Info("response", "url", wh.url, "status", resp.Status)
+		wh.client.logger.Info("response", "url", url, "status", resp.Status)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var m tooManyRequestsResponse
@@ -129,7 +141,7 @@ func (wh *Webhook) Execute(m Message) error {
 		if m.Global {
 			wh.client.rl.set(retryAfter)
 		}
-		return TooManyRequestsError{
+		return body, TooManyRequestsError{
 			RetryAfter: retryAfter, // Value from header is more reliable
 			Global:     m.Global,
 		}
@@ -139,9 +151,9 @@ func (wh *Webhook) Execute(m Message) error {
 			Status:  resp.StatusCode,
 			Message: resp.Status,
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return body, nil
 }
 
 type tooManyRequestsResponse struct {

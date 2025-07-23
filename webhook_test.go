@@ -21,7 +21,7 @@ func TestWebhook_Execute(t *testing.T) {
 		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		if assert.NoError(t, err) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
 		}
@@ -35,7 +35,7 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.HTTPError)
 		assert.Equal(t, 400, httpErr.Status)
 	})
@@ -53,7 +53,7 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		err2, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 3*time.Second, err2.RetryAfter)
 		assert.True(t, err2.Global)
@@ -67,7 +67,7 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
 	})
@@ -80,7 +80,7 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
 	})
@@ -94,7 +94,7 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		if assert.NoError(t, err) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
 		}
@@ -109,12 +109,12 @@ func TestWebhook_Execute(t *testing.T) {
 		)
 		c := dhook.NewClient(dhook.WithHTTPTimeout(100 * time.Millisecond))
 		wh := c.NewWebhook(url)
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 	t.Run("should return error when webhook was not initialized", func(t *testing.T) {
 		wh := dhook.Webhook{}
-		err := wh.Execute(dhook.Message{Content: "content"})
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		assert.ErrorIs(t, err, dhook.ErrInvalidConfiguration)
 	})
 }

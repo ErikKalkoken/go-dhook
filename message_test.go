@@ -46,22 +46,10 @@ func TestMessage_Validate(t *testing.T) {
 			false,
 		},
 		{
-			"embed author name too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{Author: dhook.EmbedAuthor{Name: makeStr(4096)}},
-				{Description: "description"},
-			}},
+			"username too long",
+			dhook.Message{Content: "content", Username: makeStr(81)},
 			false,
 		},
-		{
-			"embed footer too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{Footer: dhook.EmbedFooter{Text: makeStr(2049)}},
-				{Description: "description"},
-			}},
-			false,
-		},
-		{"username too long", dhook.Message{Content: "content", Username: makeStr(81)}, false},
 		{
 			"too many embeds",
 			dhook.Message{Embeds: []dhook.Embed{
@@ -116,6 +104,7 @@ func TestMessage_Validate(t *testing.T) {
 			}},
 			false,
 		},
+		// invalid embed fields
 		{
 			"field name too long",
 			dhook.Message{Embeds: []dhook.Embed{
@@ -134,7 +123,7 @@ func TestMessage_Validate(t *testing.T) {
 				{
 					Description: "description",
 					Fields: []dhook.EmbedField{
-						{Name: "name", Value: makeStr(257)},
+						{Name: "name", Value: makeStr(1025)},
 					},
 				},
 			}},
@@ -149,6 +138,33 @@ func TestMessage_Validate(t *testing.T) {
 						{Name: "", Value: "value"},
 					},
 				},
+			}},
+			false,
+		},
+		// invalid embed author
+		{
+			"embed author name too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Author: dhook.EmbedAuthor{Name: makeStr(4096)}},
+				{Description: "description"},
+			}},
+			false,
+		},
+		// invalid embed footer
+		{
+			"embed footer too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Footer: dhook.EmbedFooter{Text: makeStr(2049)}},
+				{Description: "description"},
+			}},
+			false,
+		},
+		// invalid embed provider
+		{
+			"embed provider name too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Provider: dhook.EmbedProvider{Name: makeStr(257)}},
+				{Description: "description"},
 			}},
 			false,
 		},
