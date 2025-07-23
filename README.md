@@ -15,10 +15,10 @@ go-dhook is a Go library for sending messages to Discord webhooks. It was specif
 Key features:
 
 - Automatically respects Discord rate limits
-- Automatically blocks further message sending while being rate limted
+- Prevents rate limit escalation when rate limited
+- Message validation
 - Safe for concurrent use by multiple goroutines.
 - Full support of Discord embeds
-- Detection of invalid messages to prevent 400 "Bad Request" responses.
 - Build-in logging
 - Configurable client
 - Unit tested

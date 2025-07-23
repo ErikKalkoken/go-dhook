@@ -153,8 +153,8 @@ func (ea EmbedAuthor) validate() error {
 
 // EmbedField represents a field in an [Embed].
 type EmbedField struct {
-	Name   string `json:"name,omitempty"`
-	Value  string `json:"value,omitempty"`
+	Name   string `json:"name"`
+	Value  string `json:"value"`
 	Inline bool   `json:"inline,omitempty"`
 }
 
@@ -177,7 +177,7 @@ func (ef EmbedField) validate() error {
 
 // EmbedAuthor represents the footer of an [Embed].
 type EmbedFooter struct {
-	Text    string `json:"text,omitempty"`
+	Text    string `json:"text"`
 	IconURL string `json:"icon_url,omitempty"`
 }
 

@@ -16,19 +16,54 @@ func TestMessage_Validate(t *testing.T) {
 		m    dhook.Message
 		ok   bool
 	}{
+		// valid messages
 		{"minimal", dhook.Message{Content: "content"}, true},
+
+		// valid embeds
 		{"minimal embed", dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
 		{"", dhook.Message{Embeds: []dhook.Embed{{Timestamp: "2006-01-02T15:04:05Z"}}}, true},
 
+		// invalid messages
 		{"empty", dhook.Message{}, false},
-		{"invalid timestamp", dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}}, false},
 		{"content too long", dhook.Message{Content: makeStr(2001)}, false},
-		{"embed too large", dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}}, false},
+
+		// invalid embeds
+		{
+			"invalid timestamp",
+			dhook.Message{Embeds: []dhook.Embed{{Timestamp: "invalid"}}},
+			false,
+		},
+		{
+			"embed too large",
+			dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}},
+			false,
+		},
+		{
+			"embed title large",
+			dhook.Message{Embeds: []dhook.Embed{{Title: makeStr(257)}}},
+			false,
+		},
 		{
 			"combined embeds too large",
 			dhook.Message{Embeds: []dhook.Embed{
 				{Description: makeStr(4096)},
 				{Description: makeStr(4096)},
+			}},
+			false,
+		},
+		{
+			"embed author name too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Author: dhook.EmbedAuthor{Name: makeStr(4096)}},
+				{Description: "description"},
+			}},
+			false,
+		},
+		{
+			"embed footer too long",
+			dhook.Message{Embeds: []dhook.Embed{
+				{Footer: dhook.EmbedFooter{Text: makeStr(2049)}},
+				{Description: "description"},
 			}},
 			false,
 		},
