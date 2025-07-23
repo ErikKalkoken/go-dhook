@@ -40,7 +40,7 @@ func (e HTTPError) Error() string {
 	return e.Message
 }
 
-// Error representing an invalid configuration, e.g. a negative HTTP timeout.
+// ErrInvalidConfiguration represents an invalid configuration, e.g. a negative HTTP timeout.
 var ErrInvalidConfiguration = errors.New("invalid configuration")
 
 // Webhook represents a Discord webhook.

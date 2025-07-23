@@ -10,22 +10,20 @@ import (
 )
 
 func TestMessage_Validate(t *testing.T) {
+	validURL := "https://www.googl.com"
+	invalidURL := "//invalid/server/abc"
 	cases := []struct {
 		name string
 		m    dhook.Message
 		ok   bool
 	}{
-		// valid messages
+		// messages
 		{"minimal", dhook.Message{Content: "content"}, true},
-
-		// valid embeds
-		{"minimal embed", dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
-
-		// invalid messages
 		{"empty", dhook.Message{}, false},
 		{"content too long", dhook.Message{Content: makeStr(2001)}, false},
 
-		// invalid embeds
+		// embed
+		{"minimal embed", dhook.Message{Embeds: []dhook.Embed{{Description: "description"}}}, true},
 		{
 			"embed too large",
 			dhook.Message{Embeds: []dhook.Embed{{Description: makeStr(4097)}}},
@@ -68,103 +66,150 @@ func TestMessage_Validate(t *testing.T) {
 		},
 		{
 			"embed with too many fields",
-			dhook.Message{Embeds: []dhook.Embed{
-				{
-					Description: "description",
-					Fields: []dhook.EmbedField{
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-						{Name: "name", Value: "value"},
-					},
-				},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Fields: []dhook.Field{
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+				{Name: "name", Value: "value"},
+			}}}},
 			false,
 		},
-		// invalid embed fields
+		// embed field
+		{
+			"valid field",
+			dhook.Message{Embeds: []dhook.Embed{{Fields: []dhook.Field{
+				{Name: "name", Value: "value"},
+			}}}},
+			true,
+		},
 		{
 			"field name too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{
-					Description: "description",
-					Fields: []dhook.EmbedField{
-						{Name: makeStr(257), Value: "value"},
-					},
-				},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Fields: []dhook.Field{
+				{Name: makeStr(257), Value: "value"},
+			}}}},
 			false,
 		},
 		{
 			"field value too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{
-					Description: "description",
-					Fields: []dhook.EmbedField{
-						{Name: "name", Value: makeStr(1025)},
-					},
-				},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Fields: []dhook.Field{
+				{Name: "name", Value: makeStr(1025)},
+			}}}},
 			false,
 		},
 		{
 			"field name missing",
-			dhook.Message{Embeds: []dhook.Embed{
-				{
-					Description: "description",
-					Fields: []dhook.EmbedField{
-						{Name: "", Value: "value"},
-					},
-				},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Fields: []dhook.Field{
+				{Name: "", Value: "value"},
+			}}}},
 			false,
 		},
-		// invalid embed author
+		// embed author
+		{
+			"valid embed author",
+			dhook.Message{Embeds: []dhook.Embed{{Author: dhook.Author{
+				Name:    "name",
+				URL:     validURL,
+				IconURL: validURL,
+			}}}},
+			true,
+		},
 		{
 			"embed author name too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{Author: dhook.EmbedAuthor{Name: makeStr(4096)}},
-				{Description: "description"},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Author: dhook.Author{
+				Name: makeStr(4096),
+			}}}},
 			false,
 		},
-		// invalid embed footer
+		{
+			"invalid embed author URL",
+			dhook.Message{Embeds: []dhook.Embed{{Author: dhook.Author{
+				Name: "name",
+				URL:  invalidURL,
+			}}}},
+			false,
+		},
+		{
+			"invalid embed author icon URL",
+			dhook.Message{Embeds: []dhook.Embed{{Author: dhook.Author{
+				Name:    "name",
+				IconURL: invalidURL,
+			}}}},
+			false,
+		},
+		// embed image
+		{
+			"valid embed image",
+			dhook.Message{Embeds: []dhook.Embed{{Image: dhook.Image{
+				URL: validURL,
+			}}}},
+			true,
+		},
+		{
+			"invalid embed image URL",
+			dhook.Message{Embeds: []dhook.Embed{{Image: dhook.Image{
+				URL: invalidURL,
+			}}}},
+			false,
+		},
+		// embed footer
+		{
+			"valid embed footer",
+			dhook.Message{Embeds: []dhook.Embed{{Footer: dhook.Footer{
+				Text:    "Text",
+				IconURL: validURL,
+			}}}},
+			true,
+		},
 		{
 			"embed footer too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{Footer: dhook.EmbedFooter{Text: makeStr(2049)}},
-				{Description: "description"},
-			}},
+			dhook.Message{Embeds: []dhook.Embed{{Footer: dhook.Footer{
+				Text: makeStr(2049),
+			}}}},
 			false,
 		},
-		// invalid embed provider
 		{
-			"embed provider name too long",
-			dhook.Message{Embeds: []dhook.Embed{
-				{Provider: dhook.EmbedProvider{Name: makeStr(257)}},
-				{Description: "description"},
-			}},
+			"invalid icon URL",
+			dhook.Message{Embeds: []dhook.Embed{{Footer: dhook.Footer{
+				Text:    "Text",
+				IconURL: invalidURL,
+			}}}},
+			false,
+		},
+		// embed thumbnail
+		{
+			"valid embed image",
+			dhook.Message{Embeds: []dhook.Embed{{Thumbnail: dhook.Image{
+				URL: validURL,
+			}}}},
+			true,
+		},
+		{
+			"invalid embed image URL",
+			dhook.Message{Embeds: []dhook.Embed{{Thumbnail: dhook.Image{
+				URL: invalidURL,
+			}}}},
 			false,
 		},
 	}

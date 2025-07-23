@@ -75,7 +75,7 @@ func WithHTTPClient(httpClient *http.Client) func(*Client) {
 	}
 }
 
-// WithHTTPClient sets a custom HTTP client for a client.
+// WithHTTPTimeout sets a custom HTTP client for a client.
 func WithHTTPTimeout(timeout time.Duration) func(*Client) {
 	if timeout <= 0 {
 		panic("timeout must be positive")

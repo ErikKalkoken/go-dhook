@@ -19,7 +19,7 @@ Key features:
 - Message validation
 - Build-in logging
 - Configurable client
-- Full support of Discord embeds
+- Basic messages with complete embed spec
 - Named colors
 - Unit tested
 - No dependencies (except for tests)

@@ -66,7 +66,7 @@ const (
 	usernameLength      = 80
 )
 
-// Error representing an invalid message, e.g. a message with fields that are too long.
+// ErrInvalidMessage represents an invalid message, e.g. a message with fields that are too long.
 var ErrInvalidMessage = errors.New("invalid message")
 
 // Message represents a message that can be send to a Discord webhook.
@@ -109,18 +109,19 @@ func (m Message) Validate() error {
 }
 
 // Embed represents a Discord Embed.
+//
+// Note: Provider and Video are not supported, because they can not be created.
 type Embed struct {
-	Author      EmbedAuthor    `json:"author,omitzero"`
-	Color       Color          `json:"color,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Fields      []EmbedField   `json:"fields,omitempty"`
-	Footer      EmbedFooter    `json:"footer,omitzero"`
-	Image       EmbedImage     `json:"image,omitzero"`
-	Provider    EmbedProvider  `json:"provider,omitzero"`
-	Timestamp   time.Time      `json:"timestamp,omitzero"`
-	Title       string         `json:"title,omitempty"`
-	Thumbnail   EmbedThumbnail `json:"thumbnail,omitzero"`
-	URL         string         `json:"url,omitempty"`
+	Author      Author    `json:"author,omitzero"`
+	Color       Color     `json:"color,omitempty"`
+	Description string    `json:"description,omitempty"`
+	Fields      []Field   `json:"fields,omitempty"`
+	Footer      Footer    `json:"footer,omitzero"`
+	Image       Image     `json:"image,omitzero"`
+	Thumbnail   Image     `json:"thumbnail,omitzero"`
+	Timestamp   time.Time `json:"timestamp,omitzero"`
+	Title       string    `json:"title,omitempty"`
+	URL         string    `json:"url,omitempty"`
 }
 
 func (em Embed) size() int {
@@ -157,23 +158,20 @@ func (em Embed) validate() error {
 	if err := em.Image.validate(); err != nil {
 		return err
 	}
-	if err := em.Provider.validate(); err != nil {
-		return err
-	}
 	if err := em.Thumbnail.validate(); err != nil {
 		return err
 	}
 	return nil
 }
 
-// EmbedAuthor represents the author in an [Embed].
-type EmbedAuthor struct {
+// Author represents the author in an [Embed].
+type Author struct {
 	Name    string `json:"name,omitempty"`
-	IconURL string `json:"icon_url,omitempty"`
 	URL     string `json:"url,omitempty"`
+	IconURL string `json:"icon_url,omitempty"`
 }
 
-func (ea EmbedAuthor) validate() error {
+func (ea Author) validate() error {
 	if length(ea.Name) > nameLength {
 		return fmt.Errorf("embed author name too long: %w", ErrInvalidMessage)
 	}
@@ -194,18 +192,18 @@ func (ea EmbedAuthor) validate() error {
 	return nil
 }
 
-// EmbedField represents a field in an [Embed].
-type EmbedField struct {
+// Field represents a field in an [Embed].
+type Field struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
 	Inline bool   `json:"inline"`
 }
 
-func (ef EmbedField) size() int {
+func (ef Field) size() int {
 	return length(ef.Name) + length(ef.Value)
 }
 
-func (ef EmbedField) validate() error {
+func (ef Field) validate() error {
 	if ef.Name == "" {
 		return fmt.Errorf("embed field name not defined: %w", ErrInvalidMessage)
 	}
@@ -218,13 +216,13 @@ func (ef EmbedField) validate() error {
 	return nil
 }
 
-// EmbedAuthor represents the footer of an [Embed].
-type EmbedFooter struct {
+// Footer represents the footer of an [Embed].
+type Footer struct {
 	Text    string `json:"text"`
 	IconURL string `json:"icon_url,omitempty"`
 }
 
-func (ef EmbedFooter) validate() error {
+func (ef Footer) validate() error {
 	if length(ef.Text) > footerTextLength {
 		return fmt.Errorf("embed footer text too long: %w", ErrInvalidMessage)
 	}
@@ -238,54 +236,18 @@ func (ef EmbedFooter) validate() error {
 	return nil
 }
 
-// EmbedAuthor represents the image in an [Embed].
-type EmbedImage struct {
+// Image represents the image in an [Embed].
+type Image struct {
 	URL string `json:"url,omitempty"`
 }
 
-func (ei EmbedImage) validate() error {
+func (ei Image) validate() error {
 	ok, err := isValidPublicURL(ei.URL)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return fmt.Errorf("embed image URL not valid: %w", ErrInvalidMessage)
-	}
-	return nil
-}
-
-// EmbedProvider represents a provider of an [Embed].
-type EmbedProvider struct {
-	Name string `json:"name,omitempty"`
-	URL  string `json:"icon_url,omitempty"`
-}
-
-func (ef EmbedProvider) validate() error {
-	if length(ef.Name) > nameLength {
-		return fmt.Errorf("provider footer text too long: %w", ErrInvalidMessage)
-	}
-	ok, err := isValidPublicURL(ef.URL)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("provider icon URL not valid: %w", ErrInvalidMessage)
-	}
-	return nil
-}
-
-// EmbedAuthor represents the thumbnail image in an [Embed].
-type EmbedThumbnail struct {
-	URL string `json:"url,omitempty"`
-}
-
-func (et EmbedThumbnail) validate() error {
-	ok, err := isValidPublicURL(et.URL)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("embed thumbnail URL not valid: %w", ErrInvalidMessage)
 	}
 	return nil
 }

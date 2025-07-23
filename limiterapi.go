@@ -116,18 +116,18 @@ func (rl rateLimitInfo) String() string {
 	)
 }
 
-func (l rateLimitInfo) isSet() bool {
-	return !l.timestamp.IsZero()
+func (rl rateLimitInfo) isSet() bool {
+	return !rl.timestamp.IsZero()
 }
 
-func (l rateLimitInfo) limitExceeded(now time.Time) bool {
-	if !l.isSet() {
+func (rl rateLimitInfo) limitExceeded(now time.Time) bool {
+	if !rl.isSet() {
 		return false
 	}
-	if l.remaining > 0 {
+	if rl.remaining > 0 {
 		return false
 	}
-	if l.resetAt.Before(now) {
+	if rl.resetAt.Before(now) {
 		return false
 	}
 	return true

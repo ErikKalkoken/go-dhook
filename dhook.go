@@ -76,10 +76,6 @@ Here we show how to send a message with an embed.
 				},
 				Description: "Description",
 				Image:       dhook.EmbedImage{URL: "https://picsum.photos/200/300"},
-				Provider: dhook.EmbedProvider{
-					Name: "Provider",
-					URL:  "https://www.google.com",
-				},
 				Timestamp: time.Now(),
 				Title:     "Title",
 				URL:       "https://www.google.com",
