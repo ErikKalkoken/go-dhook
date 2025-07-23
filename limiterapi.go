@@ -14,13 +14,17 @@ type limiterAPI struct {
 	logger Logger
 }
 
-func (l *limiterAPI) wait() {
+// wait will wait until a free slot is available if necessary
+// and report whether it has waited.
+func (l *limiterAPI) wait() bool {
 	l.logger.Debug("API rate limit", "info", l.rl)
-	if l.rl.limitExceeded(time.Now()) {
-		retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
-		l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
-		time.Sleep(retryAfter)
+	if !l.rl.limitExceeded(time.Now()) {
+		return false
 	}
+	retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
+	l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
+	time.Sleep(retryAfter)
+	return true
 }
 
 // updateFromHeader updates the limiter from a header.
@@ -52,6 +56,9 @@ type rateLimitInfo struct {
 	timestamp  time.Time
 }
 
+// newRateLimitInfo returns a new rateLimitInfo from a header.
+// Will return an empty rateLimitInfo when the rate limit headers are missing, incomplete.
+// will return an error when the rate limit headers are invalid.
 func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	var r rateLimitInfo
 	var err error
@@ -75,22 +82,25 @@ func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	if bucket == "" {
 		return r, nil
 	}
+	wrapErr := func(err error) error {
+		return fmt.Errorf("newRateLimitInfo invalid header %+v : %w", h, err)
+	}
 	r.limit, err = strconv.Atoi(limit)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.remaining, err = strconv.Atoi(remaining)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	resetEpoch, err := strconv.Atoi(reset)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.resetAt = time.Unix(int64(resetEpoch), 0).UTC()
 	r.resetAfter, err = strconv.ParseFloat(resetAfter, 64)
 	if err != nil {
-		return r, err
+		return r, wrapErr(err)
 	}
 	r.bucket = bucket
 	r.timestamp = time.Now().UTC()
@@ -106,18 +116,18 @@ func (rl rateLimitInfo) String() string {
 	)
 }
 
-func (l rateLimitInfo) isSet() bool {
-	return !l.timestamp.IsZero()
+func (rl rateLimitInfo) isSet() bool {
+	return !rl.timestamp.IsZero()
 }
 
-func (l rateLimitInfo) limitExceeded(now time.Time) bool {
-	if !l.isSet() {
+func (rl rateLimitInfo) limitExceeded(now time.Time) bool {
+	if !rl.isSet() {
 		return false
 	}
-	if l.remaining > 0 {
+	if rl.remaining > 0 {
 		return false
 	}
-	if l.resetAt.Before(now) {
+	if rl.resetAt.Before(now) {
 		return false
 	}
 	return true

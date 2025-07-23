@@ -6,7 +6,7 @@ import (
 )
 
 // limiter represents a rate limiter implementing the sliding log algorithm.
-// This type is safe to use concurrently.
+// This type is safe for concurrent use by multiple goroutines.
 type limiter struct {
 	logger Logger
 	max    int

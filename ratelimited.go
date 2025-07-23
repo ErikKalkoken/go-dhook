@@ -6,7 +6,7 @@ import (
 )
 
 // rateLimited holds information whether a client is being rate limited.
-// This type is safe to use concurrently.
+// This type is safe for concurrent use by multiple goroutines.
 type rateLimited struct {
 	mu      sync.Mutex
 	resetAt time.Time
