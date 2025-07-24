@@ -7,6 +7,7 @@ import (
 	"github.com/ErikKalkoken/go-dhook"
 )
 
+// This example shows how to send a simple message to a Discord webhook.
 func Example_simple() {
 	c := dhook.NewClient()
 	wh := c.NewWebhook("YOUR-WEBHOOK-URL")
@@ -16,6 +17,7 @@ func Example_simple() {
 	}
 }
 
+// This example shows how to send a complex message with a Discord embed.
 func Example_complex() {
 	c := dhook.NewClient()
 	wh := c.NewWebhook("YOUR-WEBHOOK-URL")
@@ -54,6 +56,7 @@ func Example_complex() {
 	}
 }
 
+// This example shows how to use execute options when sending a message.
 func Example_options() {
 	c := dhook.NewClient()
 	wh := c.NewWebhook("YOUR-WEBHOOK-URL")
