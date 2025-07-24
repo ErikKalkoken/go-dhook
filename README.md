@@ -24,10 +24,38 @@ Key features:
 - Unit tested
 - No dependencies (except for tests)
 
-You can add this library to your current Go module with this command:
+## Example
+
+Below is an example on how to send a basic message to a webhook.
+
+> [!TIP]
+> Please don't forget to replace the webhook URL in the example with a real URL from your Discord server before trying it out.
+
+```go
+    package main
+
+    import (
+        "github.com/ErikKalkoken/go-dhook"
+    )
+
+    func main() {
+        c := dhook.NewClient()
+        wh := c.NewWebhook("YOUR-WEBHOOK-URL")
+        _, err := wh.Execute(dhook.Message{Content: "Hello, World!"}, nil)
+        if err != nil {
+            panic(err)
+        }
+    }
+```
+
+## Installation
+
+You can add this library to your Go module with the following command:
 
 ```sh
 go get github.com/ErikKalkoken/go-dhook
 ```
 
-For the API documentation and examples please see [Go Reference](https://pkg.go.dev/github.com/ErikKalkoken/go-dhook).
+## Documentation
+
+For the API documentation and more examples please see [Go Reference](https://pkg.go.dev/github.com/ErikKalkoken/go-dhook).
