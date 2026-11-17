@@ -1,6 +1,6 @@
 # go-dhook
 
-A Go library for sending messages to Discord webhooks.
+A Go library for sending high volumes of messages to Discord webhooks while respecting rate limits.
 
 ![GitHub Release](https://img.shields.io/github/v/release/ErikKalkoken/go-dhook)
 [![CI/CD](https://github.com/ErikKalkoken/go-dhook/actions/workflows/go.yml/badge.svg)](https://github.com/ErikKalkoken/go-dhook/actions/workflows/go.yml)
@@ -8,53 +8,70 @@ A Go library for sending messages to Discord webhooks.
 ![GitHub License](https://img.shields.io/github/license/ErikKalkoken/go-dhook)
 [![Go Reference](https://pkg.go.dev/badge/github.com/ErikKalkoken/go-dhook.svg)](https://pkg.go.dev/github.com/ErikKalkoken/go-dhook)
 
-## Description
+## Features
 
-go-dhook is a Go library for sending messages to Discord webhooks. It was specifically designed to allow sending a high volume of messages without being rate limited by the Discord API (i.e. 429 "Too many Request" response).
-
-Key features:
-
-- Automatically respects Discord rate limits
-- Prevents rate limit escalation when rate limited
+- Respects Discord rate limits, including the undocumented webhook limit
+- Blocks requests after a 429 response to prevent rate limit escalation
 - Message validation
-- Build-in logging
-- Configurable client
-- Basic messages with complete embed spec
+- Built-in logging
+- Configurable HTTP client, timeout, logger and rate limits
+- Messages with full embed support
 - Named colors
-- Unit tested
 - No dependencies (except for tests)
 
-## Example
-
-Below is an example on how to send a basic message to a webhook.
-
-> [!TIP]
-> Please don't forget to replace the webhook URL in the example with a real URL from your Discord server before trying it out.
-
-```go
-    package main
-
-    import (
-        "github.com/ErikKalkoken/go-dhook"
-    )
-
-    func main() {
-        c := dhook.NewClient()
-        wh := c.NewWebhook("YOUR-WEBHOOK-URL")
-        _, err := wh.Execute(dhook.Message{Content: "Hello, World!"}, nil)
-        if err != nil {
-            panic(err)
-        }
-    }
-```
+> [!NOTE]
+> This library is pre-1.0. The API may still change between minor versions.
 
 ## Installation
+
+go-dhook requires Go 1.24 or later.
 
 You can add this library to your Go module with the following command:
 
 ```sh
 go get github.com/ErikKalkoken/go-dhook
 ```
+
+## Example
+
+Below is an example of how to send a basic message to a webhook.
+
+> [!TIP]
+> Please don't forget to replace the webhook URL in the example with a real URL from your Discord server before trying it out.
+> See [Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks) for how to create one.
+
+```go
+package main
+
+import (
+    "github.com/ErikKalkoken/go-dhook"
+)
+
+func main() {
+    c := dhook.NewClient()
+    wh := c.NewWebhook("YOUR-WEBHOOK-URL")
+    _, err := wh.Execute(dhook.Message{Content: "Hello, World!"}, nil)
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+Create **one** `Client` and reuse it for the lifetime of your application. Otherwise rate limits cannot be tracked correctly. Clients and webhooks are safe for concurrent use.
+
+## Rate limiting
+
+go-dhook respects three rate limits that apply to webhooks:
+
+1. **Global**: the global limit from the [Discord API documentation](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit)
+2. **Per-route**: the dynamic limit from the `X-RateLimit-*` response headers
+3. **Webhook**: an undocumented limit of 30 requests per 60 seconds
+
+All three are active by default. `Execute` blocks until a request can be sent within them.
+
+If Discord still responds with 429, subsequent requests fail immediately with a
+`TooManyRequestsError` until the `Retry-After` time has passed. This prevents
+escalating the rate limit.
 
 ## Documentation
 
