@@ -103,6 +103,10 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	wh.client.limiterGlobal.wait()
 	wh.state.limiterAPI.wait()
 	wh.state.limiterWebhook.wait()
+	// Check again, because a global 429 may have occurred while waiting.
+	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
+		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
 	defer cancel()
