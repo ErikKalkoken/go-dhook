@@ -3,6 +3,8 @@ package dhook
 import (
 	"log/slog"
 	"net/http"
+	"regexp"
+	"sync"
 	"time"
 )
 
@@ -13,6 +15,8 @@ const (
 	webhookRateLimitPeriodDefault   = 60 * time.Second
 	webhookRateLimitRequestsDefault = 30
 )
+
+var webhookIDRE = regexp.MustCompile(`/webhooks/(\d+)/`)
 
 // Logger represents an interface for implementing a logger similar to slog.
 type Logger interface {
@@ -35,6 +39,9 @@ type (
 		rl                       rateLimited
 		webhookRateLimitPeriod   time.Duration
 		webhookRateLimitRequests int
+
+		mu     sync.Mutex               // protects states
+		states map[string]*webhookState // rate limit state by webhook key
 	}
 
 	// ClientOption represents an option for configuring a [Client].
@@ -51,7 +58,8 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 	}
 }
 
-// WithHTTPTimeout sets a custom HTTP client for a client.
+// WithHTTPTimeout sets a custom timeout for each request to the Discord API.
+// The default is 30 seconds.
 func WithHTTPTimeout(timeout time.Duration) ClientOption {
 	if timeout <= 0 {
 		panic("timeout must be positive")
@@ -116,6 +124,7 @@ func NewClient(opts ...ClientOption) *Client {
 		logger:                   slog.Default(),
 		webhookRateLimitPeriod:   webhookRateLimitPeriodDefault,
 		webhookRateLimitRequests: webhookRateLimitRequestsDefault,
+		states:                   make(map[string]*webhookState),
 	}
 	for _, opt := range opts {
 		opt(client)
@@ -129,14 +138,25 @@ func NewClient(opts ...ClientOption) *Client {
 	return client
 }
 
-// NewWebhook returns a new webhook for a client.
+// NewWebhook returns a webhook for url.
+// Webhooks for the same Discord webhook share their rate limits.
+// Rate limit state is kept for the lifetime of the client.
 func (c *Client) NewWebhook(url string) *Webhook {
 	if c.limiterGlobal == nil {
 		panic("can not use uninitialized Client")
 	}
-	wh := &Webhook{
-		client: c,
-		url:    url,
+	return &Webhook{client: c, url: url, state: c.webhookState(url)}
+}
+
+// webhookState returns the shared rate limit state for the Discord webhook of url.
+func (c *Client) webhookState(url string) *webhookState {
+	key := webhookKey(url)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if st, ok := c.states[key]; ok {
+		return st
+	}
+	st := &webhookState{
 		limiterWebhook: newLimiter(
 			c.webhookRateLimitRequests,
 			c.webhookRateLimitPeriod,
@@ -144,6 +164,16 @@ func (c *Client) NewWebhook(url string) *Webhook {
 			c.logger,
 		),
 	}
-	wh.limiterAPI.logger = c.logger
-	return wh
+	st.limiterAPI.logger = c.logger
+	c.states[key] = st
+	return st
+}
+
+// webhookKey returns the ID of the Discord webhook in url,
+// or url itself if it is not a Discord webhook URL.
+func webhookKey(url string) string {
+	if m := webhookIDRE.FindStringSubmatch(url); m != nil {
+		return m[1]
+	}
+	return url
 }

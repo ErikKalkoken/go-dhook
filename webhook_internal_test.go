@@ -11,7 +11,7 @@ func TestWebhook(t *testing.T) {
 	t.Run("should abort when rateLimitExceeded and not yet reset", func(t *testing.T) {
 		c := NewClient()
 		wh := c.NewWebhook("url")
-		wh.rl.set(60 * time.Second)
+		wh.state.rl.set(60 * time.Second)
 		_, err := wh.Execute(Message{Content: "content"}, nil)
 		err2, _ := err.(TooManyRequestsError)
 		assert.False(t, err2.Global)

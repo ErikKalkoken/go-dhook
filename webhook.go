@@ -48,7 +48,11 @@ var ErrInvalidConfiguration = errors.New("invalid configuration")
 type Webhook struct {
 	client *Client
 	url    string
+	state  *webhookState
+}
 
+// webhookState holds the rate limit state shared by all webhooks for the same Discord webhook.
+type webhookState struct {
 	mu             sync.Mutex
 	rl             rateLimited
 	limiterAPI     limiterAPI
@@ -91,25 +95,27 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
-	wh.mu.Lock()
-	defer wh.mu.Unlock()
-	if isActive, retryAfter := wh.rl.getOrReset(); isActive {
+	wh.state.mu.Lock()
+	defer wh.state.mu.Unlock()
+	if isActive, retryAfter := wh.state.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter}
 	}
 	wh.client.limiterGlobal.wait()
-	wh.limiterAPI.wait()
-	wh.limiterWebhook.wait()
+	wh.state.limiterAPI.wait()
+	wh.state.limiterWebhook.wait()
 
-	url := wh.url
-	if opt != nil && opt.Wait {
-		url += "?wait=1"
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(dat))
+	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
 		return nil, err
 	}
+	if opt != nil && opt.Wait {
+		q := req.URL.Query()
+		q.Set("wait", "true")
+		req.URL.RawQuery = q.Encode()
+	}
+	url := req.URL.String()
 	req.Header.Set("Content-Type", "application/json")
 	wh.client.logger.Debug("request", "url", url, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
@@ -117,7 +123,7 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if err := wh.limiterAPI.updateFromHeader(resp.Header); err != nil {
+	if err := wh.state.limiterAPI.updateFromHeader(resp.Header); err != nil {
 		wh.client.logger.Error("Failed to update API limiter from header", "error", err)
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -145,7 +151,7 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 				retryAfter = time.Duration(x) * time.Second
 			}
 		}
-		wh.rl.set(retryAfter)
+		wh.state.rl.set(retryAfter)
 		if m.Global {
 			wh.client.rl.set(retryAfter)
 		}

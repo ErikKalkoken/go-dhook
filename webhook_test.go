@@ -26,6 +26,44 @@ func TestWebhook_Execute(t *testing.T) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
 		}
 	})
+	t.Run("should add wait to URL with query parameters", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url+"?thread_id=1&wait=true", httpmock.NewStringResponder(200, "{}"))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url + "?thread_id=1")
+		_, err := wh.Execute(dhook.Message{Content: "content"}, &dhook.WebhookExecuteOptions{Wait: true})
+		if assert.NoError(t, err) {
+			assert.Equal(t, 1, httpmock.GetTotalCallCount())
+		}
+	})
+	t.Run("should replace existing wait parameter", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url+"?wait=true", httpmock.NewStringResponder(200, "{}"))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url + "?wait=false")
+		_, err := wh.Execute(dhook.Message{Content: "content"}, &dhook.WebhookExecuteOptions{Wait: true})
+		if assert.NoError(t, err) {
+			assert.Equal(t, 1, httpmock.GetCallCountInfo()["POST "+url+"?wait=true"])
+		}
+	})
+	t.Run("should apply webhook rate limit across URLs of same Discord webhook", func(t *testing.T) {
+		httpmock.Reset()
+		url1 := "https://discord.com/api/webhooks/123/token"
+		url2 := "https://discordapp.com/api/v10/webhooks/123/token"
+		httpmock.RegisterResponder("POST", url1, httpmock.NewStringResponder(204, ""))
+		httpmock.RegisterResponder("POST", url2, httpmock.NewStringResponder(204, ""))
+		const period = 200 * time.Millisecond
+		c := dhook.NewClient(dhook.WithWebhookRateLimit(1, period))
+		start := time.Now()
+		_, err := c.NewWebhook(url1).Execute(dhook.Message{Content: "first"}, nil)
+		assert.NoError(t, err)
+		_, err = c.NewWebhook(url2).Execute(dhook.Message{Content: "second"}, nil)
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, time.Since(start), period)
+		info := httpmock.GetCallCountInfo()
+		assert.Equal(t, 1, info["POST "+url1])
+		assert.Equal(t, 1, info["POST "+url2])
+	})
 	t.Run("should return http 400 as HTTPError", func(t *testing.T) {
 		httpmock.Reset()
 		httpmock.RegisterResponder(
@@ -125,7 +163,7 @@ func TestWebhook_Execute(t *testing.T) {
 	})
 	t.Run("message with wait option returns response body", func(t *testing.T) {
 		httpmock.Reset()
-		url2 := url + "?wait=1"
+		url2 := url + "?wait=true"
 		httpmock.RegisterResponder("POST", url2, httpmock.NewStringResponder(200, "message"))
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
