@@ -85,3 +85,22 @@ func TestParseRetryAfter(t *testing.T) {
 		})
 	}
 }
+
+func TestRedactURL(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"plain", "https://discord.com/api/webhooks/123/token", "https://discord.com/api/webhooks/123/REDACTED"},
+		{"API version", "https://discord.com/api/v10/webhooks/123/token", "https://discord.com/api/v10/webhooks/123/REDACTED"},
+		{"trailing slash", "https://discord.com/api/webhooks/123/token/", "https://discord.com/api/webhooks/123/REDACTED/"},
+		{"query", "https://discord.com/api/webhooks/123/token?thread_id=1&wait=true", "https://discord.com/api/webhooks/123/REDACTED?thread_id=1&wait=true"},
+		{"other URL", "http://127.0.0.1:8080/hook", "http://127.0.0.1:8080/hook"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, redactURL(tc.url))
+		})
+	}
+}

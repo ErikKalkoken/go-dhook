@@ -2,7 +2,11 @@ package dhook_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,4 +213,52 @@ func TestHTTPError_Error(t *testing.T) {
 		Message: "message",
 	}
 	assert.Equal(t, "message", err.Error())
+}
+
+// recordingLogger records all log lines.
+type recordingLogger struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *recordingLogger) log(msg string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, fmt.Sprint(append([]any{msg}, args...)...))
+}
+
+func (l *recordingLogger) Debug(msg string, args ...any) { l.log(msg, args...) }
+func (l *recordingLogger) Info(msg string, args ...any)  { l.log(msg, args...) }
+func (l *recordingLogger) Warn(msg string, args ...any)  { l.log(msg, args...) }
+func (l *recordingLogger) Error(msg string, args ...any) { l.log(msg, args...) }
+
+func TestWebhook_Execute_redactsToken(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	const token = "secret-token"
+	url := "https://discord.com/api/webhooks/123/" + token
+	t.Run("should not log webhook token", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
+		l := &recordingLogger{}
+		c := dhook.NewClient(dhook.WithLogger(l))
+		_, err := c.NewWebhook(url).Execute(dhook.Message{Content: "content"}, nil)
+		if assert.NoError(t, err) {
+			assert.NotEmpty(t, l.lines)
+			for _, line := range l.lines {
+				assert.NotContains(t, line, token)
+			}
+		}
+	})
+	t.Run("should not return webhook token in errors", func(t *testing.T) {
+		httpmock.Reset()
+		errBoom := errors.New("boom")
+		httpmock.RegisterResponder("POST", url, httpmock.NewErrorResponder(errBoom))
+		c := dhook.NewClient()
+		_, err := c.NewWebhook(url).Execute(dhook.Message{Content: "content"}, nil)
+		if assert.Error(t, err) {
+			assert.False(t, strings.Contains(err.Error(), token), err.Error())
+			assert.ErrorIs(t, err, errBoom)
+		}
+	})
 }

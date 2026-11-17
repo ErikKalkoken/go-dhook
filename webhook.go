@@ -9,6 +9,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -18,6 +20,8 @@ const (
 	retryAfterTooManyRequestDefault = 60 * time.Second
 	retryAfterMax                   = 24 * time.Hour
 )
+
+var webhookTokenRE = regexp.MustCompile(`(/webhooks/\d+/)[^/?#]+`)
 
 // TooManyRequestsError represents a HTTP status code 429 error.
 type TooManyRequestsError struct {
@@ -114,19 +118,19 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
-		return nil, err
+		return nil, redactError(err)
 	}
 	if opt != nil && opt.Wait {
 		q := req.URL.Query()
 		q.Set("wait", "true")
 		req.URL.RawQuery = q.Encode()
 	}
-	url := req.URL.String()
+	logURL := redactURL(req.URL.String())
 	req.Header.Set("Content-Type", "application/json")
-	wh.client.logger.Debug("request", "url", url, "body", string(dat))
+	wh.client.logger.Debug("request", "url", logURL, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err)
 	}
 	defer resp.Body.Close()
 	if err := wh.state.limiterAPI.updateFromHeader(resp.Header); err != nil {
@@ -136,11 +140,11 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	wh.client.logger.Debug("response", "url", url, "status", resp.Status, "headers", resp.Header, "body", string(body))
+	wh.client.logger.Debug("response", "url", logURL, "status", resp.Status, "headers", resp.Header, "body", string(body))
 	if resp.StatusCode >= http.StatusBadRequest {
-		wh.client.logger.Warn("response", "url", url, "status", resp.Status)
+		wh.client.logger.Warn("response", "url", logURL, "status", resp.Status)
 	} else {
-		wh.client.logger.Info("response", "url", url, "status", resp.Status)
+		wh.client.logger.Info("response", "url", logURL, "status", resp.Status)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var m tooManyRequestsResponse
@@ -174,6 +178,20 @@ type tooManyRequestsResponse struct {
 	Message    string  `json:"message,omitempty"`
 	RetryAfter float64 `json:"retry_after,omitempty"`
 	Global     bool    `json:"global,omitempty"`
+}
+
+// redactURL returns url with the webhook token replaced.
+func redactURL(url string) string {
+	return webhookTokenRE.ReplaceAllString(url, "${1}REDACTED")
+}
+
+// redactError removes the webhook token from the URL in err.
+func redactError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		ue.URL = redactURL(ue.URL)
+	}
+	return err
 }
 
 // parseRetryAfter returns how long to wait after a 429 response.
