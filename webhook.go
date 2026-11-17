@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 const (
 	retryAfterTooManyRequestDefault = 60 * time.Second
+	retryAfterMax                   = 24 * time.Hour
 )
 
 // TooManyRequestsError represents a HTTP status code 429 error.
@@ -145,22 +147,16 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 		if err := json.Unmarshal(body, &m); err != nil {
 			wh.client.logger.Warn("Failed to parse 429 response body", "error", err)
 		}
-		retryAfter := retryAfterTooManyRequestDefault
-		s := resp.Header.Get("Retry-After")
-		if s != "" {
-			x, err := strconv.Atoi(s)
-			if err != nil {
-				wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
-			} else {
-				retryAfter = time.Duration(x) * time.Second
-			}
+		retryAfter, err := parseRetryAfter(resp.Header, m)
+		if err != nil {
+			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
 		}
 		wh.state.rl.set(retryAfter)
 		if m.Global {
 			wh.client.rl.set(retryAfter)
 		}
 		return body, TooManyRequestsError{
-			RetryAfter: retryAfter, // Value from header is more reliable
+			RetryAfter: retryAfter,
 			Global:     m.Global,
 		}
 	}
@@ -178,4 +174,18 @@ type tooManyRequestsResponse struct {
 	Message    string  `json:"message,omitempty"`
 	RetryAfter float64 `json:"retry_after,omitempty"`
 	Global     bool    `json:"global,omitempty"`
+}
+
+// parseRetryAfter returns how long to wait after a 429 response.
+func parseRetryAfter(h http.Header, m tooManyRequestsResponse) (time.Duration, error) {
+	secs := math.Ceil(m.RetryAfter)
+	x, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || x <= 0 {
+		if secs <= 0 {
+			return retryAfterTooManyRequestDefault, errors.New("no valid retry after in response")
+		}
+		x = 0
+	}
+	secs = min(max(secs, float64(x)), retryAfterMax.Seconds())
+	return time.Duration(secs) * time.Second, nil
 }

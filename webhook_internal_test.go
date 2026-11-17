@@ -1,6 +1,7 @@
 package dhook
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -41,4 +42,46 @@ func TestWebhook(t *testing.T) {
 			assert.True(t, err2.Global)
 		}
 	})
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	cases := []struct {
+		name    string
+		header  string
+		body    float64
+		want    time.Duration
+		wantErr bool
+	}{
+		{"header", "3", 2.57, 3 * time.Second, false},
+		{"header without body", "3", 0, 3 * time.Second, false},
+		{"header smaller than body", "0", 1.5, 2 * time.Second, false},
+		{"header larger than body", "3", 1.2, 3 * time.Second, false},
+		{"negative header", "-5", 0, retryAfterTooManyRequestDefault, true},
+		{"zero header without body", "0", 0, retryAfterTooManyRequestDefault, true},
+		{"negative header with body", "-5", 1.2, 2 * time.Second, false},
+		{"huge header", "99999999999", 0, retryAfterMax, false},
+		{"out of range header with body", "99999999999999999999", 1.2, 2 * time.Second, false},
+		{"huge body", "", 1e10, retryAfterMax, false},
+		{"invalid header with body", "invalid", 1.2, 2 * time.Second, false},
+		{"missing header with body", "", 0.5, 1 * time.Second, false},
+		{"missing header with whole body", "", 2, 2 * time.Second, false},
+		{"invalid header without body", "invalid", 0, retryAfterTooManyRequestDefault, true},
+		{"missing header without body", "", 0, retryAfterTooManyRequestDefault, true},
+		{"missing header with negative body", "", -1, retryAfterTooManyRequestDefault, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := http.Header{}
+			if tc.header != "" {
+				h.Set("Retry-After", tc.header)
+			}
+			got, err := parseRetryAfter(h, tooManyRequestsResponse{RetryAfter: tc.body})
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

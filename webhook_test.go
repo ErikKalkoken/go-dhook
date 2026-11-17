@@ -85,7 +85,7 @@ func TestWebhook_Execute(t *testing.T) {
 			httpmock.NewJsonResponderOrPanic(429,
 				map[string]any{
 					"message":     "You are being rate limited.",
-					"retry_after": 64.57,
+					"retry_after": 2.57,
 					"global":      true,
 				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
 		)
@@ -121,6 +121,21 @@ func TestWebhook_Execute(t *testing.T) {
 		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
+	})
+	t.Run("should return http 429 as TooManyRequestsError and use retry_after from body", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder(
+			"POST",
+			url,
+			httpmock.NewJsonResponderOrPanic(429, map[string]any{"retry_after": 0.5}),
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
+		var err2 dhook.TooManyRequestsError
+		if assert.ErrorAs(t, err, &err2) {
+			assert.Equal(t, 1*time.Second, err2.RetryAfter)
+		}
 	})
 	t.Run("should not timeout when not configured", func(t *testing.T) {
 		httpmock.Reset()
