@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -15,7 +18,10 @@ import (
 
 const (
 	retryAfterTooManyRequestDefault = 60 * time.Second
+	retryAfterMax                   = 24 * time.Hour
 )
+
+var webhookTokenRE = regexp.MustCompile(`(/webhooks/\d+/)[^/?#]+`)
 
 // TooManyRequestsError represents a HTTP status code 429 error.
 type TooManyRequestsError struct {
@@ -48,7 +54,11 @@ var ErrInvalidConfiguration = errors.New("invalid configuration")
 type Webhook struct {
 	client *Client
 	url    string
+	state  *webhookState
+}
 
+// webhookState holds the rate limit state shared by all webhooks for the same Discord webhook.
+type webhookState struct {
 	mu             sync.Mutex
 	rl             rateLimited
 	limiterAPI     limiterAPI
@@ -91,66 +101,66 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
-	wh.mu.Lock()
-	defer wh.mu.Unlock()
-	if isActive, retryAfter := wh.rl.getOrReset(); isActive {
+	wh.state.mu.Lock()
+	defer wh.state.mu.Unlock()
+	if isActive, retryAfter := wh.state.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter}
 	}
 	wh.client.limiterGlobal.wait()
-	wh.limiterAPI.wait()
-	wh.limiterWebhook.wait()
-
-	url := wh.url
-	if opt != nil && opt.Wait {
-		url += "?wait=1"
+	wh.state.limiterAPI.wait()
+	wh.state.limiterWebhook.wait()
+	// Check again, because a global 429 may have occurred while waiting.
+	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
+		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(dat))
+	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
-		return nil, err
+		return nil, redactError(err)
 	}
+	if opt != nil && opt.Wait {
+		q := req.URL.Query()
+		q.Set("wait", "true")
+		req.URL.RawQuery = q.Encode()
+	}
+	logURL := redactURL(req.URL.String())
 	req.Header.Set("Content-Type", "application/json")
-	wh.client.logger.Debug("request", "url", url, "body", string(dat))
+	wh.client.logger.Debug("request", "url", logURL, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err)
 	}
 	defer resp.Body.Close()
-	if err := wh.limiterAPI.updateFromHeader(resp.Header); err != nil {
+	if err := wh.state.limiterAPI.updateFromHeader(resp.Header); err != nil {
 		wh.client.logger.Error("Failed to update API limiter from header", "error", err)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	wh.client.logger.Debug("response", "url", url, "status", resp.Status, "headers", resp.Header, "body", string(body))
+	wh.client.logger.Debug("response", "url", logURL, "status", resp.Status, "headers", resp.Header, "body", string(body))
 	if resp.StatusCode >= http.StatusBadRequest {
-		wh.client.logger.Warn("response", "url", url, "status", resp.Status)
+		wh.client.logger.Warn("response", "url", logURL, "status", resp.Status)
 	} else {
-		wh.client.logger.Info("response", "url", url, "status", resp.Status)
+		wh.client.logger.Info("response", "url", logURL, "status", resp.Status)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var m tooManyRequestsResponse
 		if err := json.Unmarshal(body, &m); err != nil {
 			wh.client.logger.Warn("Failed to parse 429 response body", "error", err)
 		}
-		retryAfter := retryAfterTooManyRequestDefault
-		s := resp.Header.Get("Retry-After")
-		if s != "" {
-			x, err := strconv.Atoi(s)
-			if err != nil {
-				wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
-			} else {
-				retryAfter = time.Duration(x) * time.Second
-			}
+		retryAfter, err := parseRetryAfter(resp.Header, m)
+		if err != nil {
+			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
 		}
-		wh.rl.set(retryAfter)
+		wh.state.rl.set(retryAfter)
 		if m.Global {
 			wh.client.rl.set(retryAfter)
 		}
 		return body, TooManyRequestsError{
-			RetryAfter: retryAfter, // Value from header is more reliable
+			RetryAfter: retryAfter,
 			Global:     m.Global,
 		}
 	}
@@ -168,4 +178,32 @@ type tooManyRequestsResponse struct {
 	Message    string  `json:"message,omitempty"`
 	RetryAfter float64 `json:"retry_after,omitempty"`
 	Global     bool    `json:"global,omitempty"`
+}
+
+// redactURL returns url with the webhook token replaced.
+func redactURL(url string) string {
+	return webhookTokenRE.ReplaceAllString(url, "${1}REDACTED")
+}
+
+// redactError removes the webhook token from the URL in err.
+func redactError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		ue.URL = redactURL(ue.URL)
+	}
+	return err
+}
+
+// parseRetryAfter returns how long to wait after a 429 response.
+func parseRetryAfter(h http.Header, m tooManyRequestsResponse) (time.Duration, error) {
+	secs := math.Ceil(m.RetryAfter)
+	x, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || x <= 0 {
+		if secs <= 0 {
+			return retryAfterTooManyRequestDefault, errors.New("no valid retry after in response")
+		}
+		x = 0
+	}
+	secs = min(max(secs, float64(x)), retryAfterMax.Seconds())
+	return time.Duration(secs) * time.Second, nil
 }

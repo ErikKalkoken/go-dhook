@@ -59,8 +59,10 @@ func TestWithWebhookRateLimit(t *testing.T) {
 	})
 }
 func TestClient_NewWebhook(t *testing.T) {
-	c := &dhook.Client{}
-	assert.Panics(t, func() {
-		c.NewWebhook("abc")
+	t.Run("should panic when client is not initialized", func(t *testing.T) {
+		c := &dhook.Client{}
+		assert.Panics(t, func() {
+			c.NewWebhook("abc")
+		})
 	})
 }

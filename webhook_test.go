@@ -2,7 +2,11 @@ package dhook_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +30,44 @@ func TestWebhook_Execute(t *testing.T) {
 			assert.Equal(t, 1, httpmock.GetTotalCallCount())
 		}
 	})
+	t.Run("should add wait to URL with query parameters", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url+"?thread_id=1&wait=true", httpmock.NewStringResponder(200, "{}"))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url + "?thread_id=1")
+		_, err := wh.Execute(dhook.Message{Content: "content"}, &dhook.WebhookExecuteOptions{Wait: true})
+		if assert.NoError(t, err) {
+			assert.Equal(t, 1, httpmock.GetTotalCallCount())
+		}
+	})
+	t.Run("should replace existing wait parameter", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url+"?wait=true", httpmock.NewStringResponder(200, "{}"))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url + "?wait=false")
+		_, err := wh.Execute(dhook.Message{Content: "content"}, &dhook.WebhookExecuteOptions{Wait: true})
+		if assert.NoError(t, err) {
+			assert.Equal(t, 1, httpmock.GetCallCountInfo()["POST "+url+"?wait=true"])
+		}
+	})
+	t.Run("should apply webhook rate limit across URLs of same Discord webhook", func(t *testing.T) {
+		httpmock.Reset()
+		url1 := "https://discord.com/api/webhooks/123/token"
+		url2 := "https://discordapp.com/api/v10/webhooks/123/token"
+		httpmock.RegisterResponder("POST", url1, httpmock.NewStringResponder(204, ""))
+		httpmock.RegisterResponder("POST", url2, httpmock.NewStringResponder(204, ""))
+		const period = 200 * time.Millisecond
+		c := dhook.NewClient(dhook.WithWebhookRateLimit(1, period))
+		start := time.Now()
+		_, err := c.NewWebhook(url1).Execute(dhook.Message{Content: "first"}, nil)
+		assert.NoError(t, err)
+		_, err = c.NewWebhook(url2).Execute(dhook.Message{Content: "second"}, nil)
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, time.Since(start), period)
+		info := httpmock.GetCallCountInfo()
+		assert.Equal(t, 1, info["POST "+url1])
+		assert.Equal(t, 1, info["POST "+url2])
+	})
 	t.Run("should return http 400 as HTTPError", func(t *testing.T) {
 		httpmock.Reset()
 		httpmock.RegisterResponder(
@@ -47,7 +89,7 @@ func TestWebhook_Execute(t *testing.T) {
 			httpmock.NewJsonResponderOrPanic(429,
 				map[string]any{
 					"message":     "You are being rate limited.",
-					"retry_after": 64.57,
+					"retry_after": 2.57,
 					"global":      true,
 				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
 		)
@@ -83,6 +125,21 @@ func TestWebhook_Execute(t *testing.T) {
 		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
+	})
+	t.Run("should return http 429 as TooManyRequestsError and use retry_after from body", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder(
+			"POST",
+			url,
+			httpmock.NewJsonResponderOrPanic(429, map[string]any{"retry_after": 0.5}),
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
+		var err2 dhook.TooManyRequestsError
+		if assert.ErrorAs(t, err, &err2) {
+			assert.Equal(t, 1*time.Second, err2.RetryAfter)
+		}
 	})
 	t.Run("should not timeout when not configured", func(t *testing.T) {
 		httpmock.Reset()
@@ -125,7 +182,7 @@ func TestWebhook_Execute(t *testing.T) {
 	})
 	t.Run("message with wait option returns response body", func(t *testing.T) {
 		httpmock.Reset()
-		url2 := url + "?wait=1"
+		url2 := url + "?wait=true"
 		httpmock.RegisterResponder("POST", url2, httpmock.NewStringResponder(200, "message"))
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
@@ -156,4 +213,52 @@ func TestHTTPError_Error(t *testing.T) {
 		Message: "message",
 	}
 	assert.Equal(t, "message", err.Error())
+}
+
+// recordingLogger records all log lines.
+type recordingLogger struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *recordingLogger) log(msg string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, fmt.Sprint(append([]any{msg}, args...)...))
+}
+
+func (l *recordingLogger) Debug(msg string, args ...any) { l.log(msg, args...) }
+func (l *recordingLogger) Info(msg string, args ...any)  { l.log(msg, args...) }
+func (l *recordingLogger) Warn(msg string, args ...any)  { l.log(msg, args...) }
+func (l *recordingLogger) Error(msg string, args ...any) { l.log(msg, args...) }
+
+func TestWebhook_Execute_redactsToken(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	const token = "secret-token"
+	url := "https://discord.com/api/webhooks/123/" + token
+	t.Run("should not log webhook token", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
+		l := &recordingLogger{}
+		c := dhook.NewClient(dhook.WithLogger(l))
+		_, err := c.NewWebhook(url).Execute(dhook.Message{Content: "content"}, nil)
+		if assert.NoError(t, err) {
+			assert.NotEmpty(t, l.lines)
+			for _, line := range l.lines {
+				assert.NotContains(t, line, token)
+			}
+		}
+	})
+	t.Run("should not return webhook token in errors", func(t *testing.T) {
+		httpmock.Reset()
+		errBoom := errors.New("boom")
+		httpmock.RegisterResponder("POST", url, httpmock.NewErrorResponder(errBoom))
+		c := dhook.NewClient()
+		_, err := c.NewWebhook(url).Execute(dhook.Message{Content: "content"}, nil)
+		if assert.Error(t, err) {
+			assert.False(t, strings.Contains(err.Error(), token), err.Error())
+			assert.ErrorIs(t, err, errBoom)
+		}
+	})
 }
