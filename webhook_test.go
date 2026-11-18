@@ -298,7 +298,7 @@ func TestWebhook_ExecuteContext(t *testing.T) {
 		resp.Header.Set("X-RateLimit-Bucket", "abcd1234")
 		return resp
 	}
-	t.Run("should count a request canceled while in flight against the API rate limit", func(t *testing.T) {
+	t.Run("should count a request timed out while in flight against the API rate limit", func(t *testing.T) {
 		httpmock.Reset()
 		calls := 0
 		httpmock.RegisterResponder("POST", url, func(req *http.Request) (*http.Response, error) {
@@ -309,13 +309,11 @@ func TestWebhook_ExecuteContext(t *testing.T) {
 			}
 			return newLastSlotResponse(), nil
 		})
-		c := dhook.NewClient()
+		c := dhook.NewClient(dhook.WithHTTPTimeout(50 * time.Millisecond))
 		wh := c.NewWebhook(url)
 		_, err := wh.ExecuteContext(t.Context(), dhook.Message{Content: "first"}, nil)
 		require.NoError(t, err)
-		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-		defer cancel()
-		_, err = wh.ExecuteContext(ctx, dhook.Message{Content: "second"}, nil)
+		_, err = wh.ExecuteContext(t.Context(), dhook.Message{Content: "second"}, nil)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 		// The last slot was used by the canceled request, so the next call must wait for the reset.
 		ctx2, cancel2 := context.WithTimeout(t.Context(), 50*time.Millisecond)
@@ -323,6 +321,23 @@ func TestWebhook_ExecuteContext(t *testing.T) {
 		_, err = wh.ExecuteContext(ctx2, dhook.Message{Content: "third"}, nil)
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 		assert.Equal(t, 2, httpmock.GetTotalCallCount())
+	})
+	t.Run("should complete a request in flight when ctx is canceled", func(t *testing.T) {
+		httpmock.Reset()
+		ctx, cancel := context.WithCancel(t.Context())
+		httpmock.RegisterResponder("POST", url, func(req *http.Request) (*http.Response, error) {
+			cancel() // cancel while the request is in flight
+			time.Sleep(20 * time.Millisecond)
+			if err := req.Context().Err(); err != nil {
+				return nil, err
+			}
+			return httpmock.NewStringResponse(204, ""), nil
+		})
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.ExecuteContext(ctx, dhook.Message{Content: "content"}, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, httpmock.GetTotalCallCount())
 	})
 	t.Run("should not count a request failing with a connection error against the API rate limit", func(t *testing.T) {
 		httpmock.Reset()

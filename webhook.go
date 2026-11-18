@@ -91,23 +91,18 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	return wh.ExecuteContext(context.Background(), message, opt)
 }
 
-// ExecuteContext posts a message to the configured webhook
-// and optionally returns the message created by Discord.
+// ExecuteContext posts a message to the webhook, waiting for rate limits if needed.
+// The response is only returned when opt.Wait is enabled. opt can be nil.
 //
-// Options can be provided through opt or opt can be nil for executing without options.
-// A response from Discord (e.g. the message created) is only returned when the Wait option is enabled.
+// ctx cancels only the waiting. A sent request is completed, bounded by the HTTP timeout.
 //
-// Discord's rate limits are automatically complied with by waiting
-// until there is a free slot to post the message if necessary.
-//
-// The message is checked for being not empty, but not fully validated.
-// A full validation can be performed with [Message.Validate].
+// The message is only checked for being not empty. Use [Message.Validate] for a full check.
 //
 // Common errors returned:
-//   - [HTTPError]: Discord returned HTTP status codes of 400 or above (except 429)
-//   - [TooManyRequestsError]: Discord returned status HTTP status code 429
-//   - [context.Canceled]: ctx was canceled
-//   - [context.DeadlineExceeded]: ctx deadline or HTTP timeout exceeded, incl. while waiting for a rate limit
+//   - [HTTPError]: Discord returned status 400 or above (except 429)
+//   - [TooManyRequestsError]: Discord returned status 429
+//   - [context.Canceled]: ctx was canceled before sending
+//   - [context.DeadlineExceeded]: ctx deadline exceeded before sending, or HTTP timeout exceeded
 func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *WebhookExecuteOptions) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -146,8 +141,11 @@ func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *Web
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	ctx, cancel := context.WithTimeout(ctx, wh.client.httpTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wh.client.httpTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
