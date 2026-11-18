@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -173,6 +172,19 @@ func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *Web
 	if err := wh.state.limiterAPI.updateFromHeader(resp.Header); err != nil {
 		wh.client.logger.Error("Failed to update API limiter from header", "error", err)
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		// Return early to ensure the rate limit is recorded even when the body can not be read.
+		wh.client.logger.Warn("response", "url", logURL, "status", resp.Status, "headers", resp.Header)
+		retryAfter, global, err := parseTooManyRequests(resp.Header)
+		if err != nil {
+			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
+		}
+		wh.state.rl.set(retryAfter)
+		if global {
+			wh.client.rl.set(retryAfter)
+		}
+		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: global}
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -183,24 +195,6 @@ func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *Web
 	} else {
 		wh.client.logger.Info("response", "url", logURL, "status", resp.Status)
 	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		var m tooManyRequestsResponse
-		if err := json.Unmarshal(body, &m); err != nil {
-			wh.client.logger.Warn("Failed to parse 429 response body", "error", err)
-		}
-		retryAfter, err := parseRetryAfter(resp.Header, m)
-		if err != nil {
-			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
-		}
-		wh.state.rl.set(retryAfter)
-		if m.Global {
-			wh.client.rl.set(retryAfter)
-		}
-		return body, TooManyRequestsError{
-			RetryAfter: retryAfter,
-			Global:     m.Global,
-		}
-	}
 	if resp.StatusCode >= 400 {
 		err := HTTPError{
 			Status:  resp.StatusCode,
@@ -209,12 +203,6 @@ func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *Web
 		return nil, err
 	}
 	return body, nil
-}
-
-type tooManyRequestsResponse struct {
-	Message    string  `json:"message,omitempty"`
-	RetryAfter float64 `json:"retry_after,omitempty"`
-	Global     bool    `json:"global,omitempty"`
 }
 
 // redactURL returns url with the webhook token replaced.
@@ -231,16 +219,28 @@ func redactError(err error) error {
 	return err
 }
 
-// parseRetryAfter returns how long to wait after a 429 response.
-func parseRetryAfter(h http.Header, m tooManyRequestsResponse) (time.Duration, error) {
-	secs := math.Ceil(m.RetryAfter)
-	x, err := strconv.Atoi(h.Get("Retry-After"))
-	if err != nil || x <= 0 {
-		if secs <= 0 {
-			return retryAfterTooManyRequestDefault, errors.New("no valid retry after in response")
-		}
-		x = 0
+// parseTooManyRequests returns how long to wait after a 429 response
+// and whether the rate limit is global.
+// A 429 without Discord rate limit headers (e.g. from Cloudflare) is treated as global.
+// Retry-After can be given in seconds or as an HTTP date.
+func parseTooManyRequests(h http.Header) (time.Duration, bool, error) {
+	scope := h.Get("X-RateLimit-Scope")
+	isGlobal := h.Get("X-RateLimit-Global")
+	hasDiscordHeader := scope != "" || isGlobal != "" || h.Get("X-RateLimit-Bucket") != ""
+	global := isGlobal == "true" || scope == "global" || !hasDiscordHeader
+	v := h.Get("Retry-After")
+	if secs, err := strconv.Atoi(v); (err == nil || errors.Is(err, strconv.ErrRange)) && secs > 0 {
+		secs = min(secs, int(retryAfterMax.Seconds()))
+		return time.Duration(secs) * time.Second, global, nil
 	}
-	secs = min(max(secs, float64(x)), retryAfterMax.Seconds())
-	return time.Duration(secs) * time.Second, nil
+	if t, err := http.ParseTime(v); err == nil {
+		now := time.Now()
+		if sd, err := http.ParseTime(h.Get("Date")); err == nil {
+			now = sd // server time; avoids clock skew
+		}
+		if d := roundUpDuration(t.Sub(now), time.Second); d > 0 {
+			return min(d, retryAfterMax), global, nil
+		}
+	}
+	return retryAfterTooManyRequestDefault, global, errors.New("no valid retry after in response")
 }

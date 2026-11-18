@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -93,7 +95,11 @@ func TestWebhook_Execute(t *testing.T) {
 					"message":     "You are being rate limited.",
 					"retry_after": 2.57,
 					"global":      true,
-				}).HeaderSet(http.Header{"Retry-After": []string{"3"}}),
+				}).HeaderSet(http.Header{
+				"Retry-After":        []string{"3"},
+				"X-RateLimit-Global": []string{"true"},
+				"X-RateLimit-Scope":  []string{"global"},
+			}),
 		)
 		c := dhook.NewClient()
 		wh := c.NewWebhook(url)
@@ -101,6 +107,74 @@ func TestWebhook_Execute(t *testing.T) {
 		err2, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 3*time.Second, err2.RetryAfter)
 		assert.True(t, err2.Global)
+	})
+	t.Run("should return http 429 with user scope as non-global TooManyRequestsError", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder(
+			"POST",
+			url,
+			httpmock.NewStringResponder(429, "").HeaderSet(http.Header{
+				"Retry-After":       []string{"3"},
+				"X-RateLimit-Scope": []string{"user"},
+			}),
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
+		var err2 dhook.TooManyRequestsError
+		if assert.ErrorAs(t, err, &err2) {
+			assert.Equal(t, 3*time.Second, err2.RetryAfter)
+			assert.False(t, err2.Global)
+		}
+	})
+	t.Run("should treat http 429 without Discord headers as global", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder(
+			"POST",
+			url,
+			httpmock.NewStringResponder(429, "<html>Cloudflare</html>").HeaderSet(http.Header{
+				"Retry-After": []string{"3"},
+			}),
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
+		var err2 dhook.TooManyRequestsError
+		if assert.ErrorAs(t, err, &err2) {
+			assert.True(t, err2.Global)
+		}
+		wh2 := c.NewWebhook("https://www.example.com/other-hook")
+		_, err = wh2.Execute(dhook.Message{Content: "content"}, nil)
+		if assert.ErrorAs(t, err, &err2) {
+			assert.True(t, err2.Global)
+		}
+		assert.Equal(t, 1, httpmock.GetTotalCallCount())
+	})
+	t.Run("should record http 429 without reading the body", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url,
+			func(req *http.Request) (*http.Response, error) {
+				h := http.Header{}
+				h.Set("Retry-After", "3")
+				h.Set("X-RateLimit-Scope", "user")
+				return &http.Response{
+					StatusCode: 429,
+					Status:     "429 Too Many Requests",
+					Header:     h,
+					Body:       io.NopCloser(iotest.ErrReader(errors.New("body read failed"))),
+				}, nil
+			},
+		)
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
+		var err2 dhook.TooManyRequestsError
+		require.ErrorAs(t, err, &err2)
+		_, err = wh.Execute(dhook.Message{Content: "content"}, nil)
+		if assert.ErrorAs(t, err, &err2) {
+			assert.False(t, err2.Global)
+		}
+		assert.Equal(t, 1, httpmock.GetTotalCallCount())
 	})
 	t.Run("should return http 429 as TooManyRequestsError and use default retry duration", func(t *testing.T) {
 		httpmock.Reset()
@@ -127,21 +201,6 @@ func TestWebhook_Execute(t *testing.T) {
 		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
 		httpErr, _ := err.(dhook.TooManyRequestsError)
 		assert.Equal(t, 60*time.Second, httpErr.RetryAfter)
-	})
-	t.Run("should return http 429 as TooManyRequestsError and use retry_after from body", func(t *testing.T) {
-		httpmock.Reset()
-		httpmock.RegisterResponder(
-			"POST",
-			url,
-			httpmock.NewJsonResponderOrPanic(429, map[string]any{"retry_after": 0.5}),
-		)
-		c := dhook.NewClient()
-		wh := c.NewWebhook(url)
-		_, err := wh.Execute(dhook.Message{Content: "content"}, nil)
-		var err2 dhook.TooManyRequestsError
-		if assert.ErrorAs(t, err, &err2) {
-			assert.Equal(t, 1*time.Second, err2.RetryAfter)
-		}
 	})
 	t.Run("should not timeout when not configured", func(t *testing.T) {
 		httpmock.Reset()
