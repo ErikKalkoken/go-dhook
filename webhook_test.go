@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ErikKalkoken/go-dhook"
 )
@@ -194,6 +196,97 @@ func TestWebhook_Execute(t *testing.T) {
 			assert.Equal(t, 1, info["POST "+url2])
 		}
 		assert.Equal(t, "message", string(b))
+	})
+}
+
+func TestWebhook_ExecuteContext(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	url := "https://www.example.com/hook"
+	t.Run("should return error when context is canceled", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := wh.ExecuteContext(ctx, dhook.Message{Content: "content"}, nil)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, 0, httpmock.GetTotalCallCount())
+	})
+	t.Run("should return error when context deadline is exceeded while waiting for rate limit", func(t *testing.T) {
+		httpmock.Reset()
+		httpmock.RegisterResponder("POST", url, httpmock.NewStringResponder(204, ""))
+		c := dhook.NewClient(dhook.WithWebhookRateLimit(1, time.Second))
+		wh := c.NewWebhook(url)
+		_, err := wh.ExecuteContext(t.Context(), dhook.Message{Content: "first"}, nil)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		_, err = wh.ExecuteContext(ctx, dhook.Message{Content: "second"}, nil)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
+		assert.Equal(t, 1, httpmock.GetTotalCallCount())
+	})
+	// newLastSlotResponse returns a response reporting one remaining slot in the API rate limit.
+	newLastSlotResponse := func() *http.Response {
+		resp := httpmock.NewStringResponse(204, "")
+		resp.Header.Set("X-RateLimit-Limit", "5")
+		resp.Header.Set("X-RateLimit-Remaining", "1")
+		resp.Header.Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(5*time.Second).Unix(), 10))
+		resp.Header.Set("X-RateLimit-Reset-After", "5")
+		resp.Header.Set("X-RateLimit-Bucket", "abcd1234")
+		return resp
+	}
+	t.Run("should count a request canceled while in flight against the API rate limit", func(t *testing.T) {
+		httpmock.Reset()
+		calls := 0
+		httpmock.RegisterResponder("POST", url, func(req *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 2 {
+				<-req.Context().Done() // simulate a request in flight until ctx ends
+				return nil, req.Context().Err()
+			}
+			return newLastSlotResponse(), nil
+		})
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.ExecuteContext(t.Context(), dhook.Message{Content: "first"}, nil)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		_, err = wh.ExecuteContext(ctx, dhook.Message{Content: "second"}, nil)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		// The last slot was used by the canceled request, so the next call must wait for the reset.
+		ctx2, cancel2 := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel2()
+		_, err = wh.ExecuteContext(ctx2, dhook.Message{Content: "third"}, nil)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Equal(t, 2, httpmock.GetTotalCallCount())
+	})
+	t.Run("should not count a request failing with a connection error against the API rate limit", func(t *testing.T) {
+		httpmock.Reset()
+		calls := 0
+		httpmock.RegisterResponder("POST", url, func(req *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 2 {
+				return nil, errors.New("connection refused")
+			}
+			return newLastSlotResponse(), nil
+		})
+		c := dhook.NewClient()
+		wh := c.NewWebhook(url)
+		_, err := wh.ExecuteContext(t.Context(), dhook.Message{Content: "first"}, nil)
+		require.NoError(t, err)
+		_, err = wh.ExecuteContext(t.Context(), dhook.Message{Content: "second"}, nil)
+		require.Error(t, err)
+		// The last slot is still free, so the next call is sent without waiting.
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		_, err = wh.ExecuteContext(ctx, dhook.Message{Content: "third"}, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, httpmock.GetTotalCallCount())
 	})
 }
 

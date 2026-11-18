@@ -1,6 +1,7 @@
 package dhook
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRateLimitInfo_New(t *testing.T) {
@@ -201,14 +203,41 @@ func TestLimiterAPI_Wait(t *testing.T) {
 	t.Run("should not wait if limit not exceeded", func(t *testing.T) {
 		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 1}}
 		l.logger = slog.Default()
-		got := l.wait()
-		assert.False(t, got)
+		start := time.Now()
+		err := l.wait(t.Context())
+		require.NoError(t, err)
+		assert.Less(t, time.Since(start), time.Millisecond*10)
 	})
 	t.Run("should wait if limit is exceeded", func(t *testing.T) {
 		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 0, resetAt: time.Now().Add(200 * time.Millisecond)}}
 		l.logger = slog.Default()
-		got := l.wait()
-		assert.True(t, got)
+		start := time.Now()
+		err := l.wait(t.Context())
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, time.Since(start), time.Second*1)
+	})
+	t.Run("should return error when context deadline is exceeded while waiting", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 0, resetAt: time.Now().Add(2 * time.Second)}}
+		l.logger = slog.Default()
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		err := l.wait(ctx)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
+	})
+}
+
+func TestLimiterAPI_Consume(t *testing.T) {
+	t.Run("should decrease remaining", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{remaining: 2}}
+		l.consume()
+		assert.Equal(t, 1, l.rl.remaining)
+	})
+	t.Run("should not decrease remaining below zero", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{remaining: 0}}
+		l.consume()
+		assert.Equal(t, 0, l.rl.remaining)
 	})
 }
 

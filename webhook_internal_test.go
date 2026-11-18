@@ -1,11 +1,13 @@
 package dhook
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWebhook(t *testing.T) {
@@ -28,7 +30,7 @@ func TestWebhook(t *testing.T) {
 	t.Run("should abort when global rate limit occurs while waiting", func(t *testing.T) {
 		c := NewClient()
 		wh := c.NewWebhook("url")
-		wh.state.mu.Lock() // let Execute wait for the lock
+		require.NoError(t, wh.state.lock(t.Context())) // let Execute wait for the lock
 		errC := make(chan error)
 		go func() {
 			_, err := wh.Execute(Message{Content: "content"}, nil)
@@ -36,11 +38,23 @@ func TestWebhook(t *testing.T) {
 		}()
 		time.Sleep(50 * time.Millisecond)
 		c.rl.set(60 * time.Second)
-		wh.state.mu.Unlock()
+		wh.state.unlock()
 		var err2 TooManyRequestsError
 		if assert.ErrorAs(t, <-errC, &err2) {
 			assert.True(t, err2.Global)
 		}
+	})
+	t.Run("should return error when context deadline is exceeded while waiting for the lock", func(t *testing.T) {
+		c := NewClient()
+		wh := c.NewWebhook("url")
+		require.NoError(t, wh.state.lock(t.Context())) // simulate another request in progress
+		defer wh.state.unlock()
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		_, err := wh.ExecuteContext(ctx, Message{Content: "content"}, nil)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
 	})
 }
 

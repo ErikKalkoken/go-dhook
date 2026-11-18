@@ -170,6 +170,7 @@ func (c *Client) webhookState(url string) *webhookState {
 		return st
 	}
 	st := &webhookState{
+		sem: make(chan struct{}, 1),
 		limiterWebhook: newLimiter(
 			c.webhookRateLimitRequests,
 			c.webhookRateLimitPeriod,

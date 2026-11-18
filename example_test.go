@@ -1,6 +1,7 @@
 package dhook_test
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -68,4 +69,17 @@ func Example_options() {
 		panic(err)
 	}
 	fmt.Println(string(b))
+}
+
+// This example shows how to limit how long to wait for sending a message,
+// including any waiting for rate limits.
+func ExampleWebhook_ExecuteContext() {
+	c := dhook.NewClient()
+	wh := c.NewWebhook("https://discord.com/api/webhooks/YOUR-ID/YOUR-TOKEN")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := wh.ExecuteContext(ctx, dhook.Message{Content: "Hello, World!"}, nil)
+	if err != nil {
+		panic(err)
+	}
 }

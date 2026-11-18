@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -58,11 +57,27 @@ type Webhook struct {
 }
 
 // webhookState holds the rate limit state shared by all webhooks for the same Discord webhook.
+// It is held for the whole execution of a request.
 type webhookState struct {
-	mu             sync.Mutex
+	sem            chan struct{} // capacity 1; works as context aware mutex
 	rl             rateLimited
 	limiterAPI     limiterAPI
 	limiterWebhook *limiter
+}
+
+// lock acquires the state or returns ctx.Err() when ctx is done first.
+func (st *webhookState) lock(ctx context.Context) error {
+	select {
+	case st.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlock releases the state.
+func (st *webhookState) unlock() {
+	<-st.sem
 }
 
 type WebhookExecuteOptions struct {
@@ -71,22 +86,33 @@ type WebhookExecuteOptions struct {
 	Wait bool
 }
 
-// Execute posts a message to the configured webhook and optionally returns the message created by Discord.
+// Execute posts a message to the configured webhook similar to ExecuteContext,
+// but is not context aware.
+func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+	return wh.ExecuteContext(context.Background(), message, opt)
+}
+
+// ExecuteContext posts a message to the configured webhook
+// and optionally returns the message created by Discord.
 //
 // Options can be provided through opt or opt can be nil for executing without options.
-// Execute will only return a response from Discord (e.g. the message created) when the Wait option is enabled.
+// A response from Discord (e.g. the message created) is only returned when the Wait option is enabled.
 //
-// Execute will automatically comply with Discord's rate limits by waiting
+// Discord's rate limits are automatically complied with by waiting
 // until there is a free slot to post the message if necessary.
 //
-// Execute will check that a message is not empty, but not do a full validation.
+// The message is checked for being not empty, but not fully validated.
 // A full validation can be performed with [Message.Validate].
 //
 // Common errors returned:
 //   - [HTTPError]: Discord returned HTTP status codes of 400 or above (except 429)
 //   - [TooManyRequestsError]: Discord returned status HTTP status code 429
-//   - [context.DeadlineExceeded]: Timeout is exceeded during the HTTP request to Discord
-func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+//   - [context.Canceled]: ctx was canceled
+//   - [context.DeadlineExceeded]: ctx deadline or HTTP timeout exceeded, incl. while waiting for a rate limit
+func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if wh.client == nil {
 		return nil, fmt.Errorf("Webhook not initialized: %w", ErrInvalidConfiguration)
 	}
@@ -101,20 +127,28 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
-	wh.state.mu.Lock()
-	defer wh.state.mu.Unlock()
+	if err := wh.state.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer wh.state.unlock()
 	if isActive, retryAfter := wh.state.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter}
 	}
-	wh.client.limiterGlobal.wait()
-	wh.state.limiterAPI.wait()
-	wh.state.limiterWebhook.wait()
+	if err := wh.client.limiterGlobal.wait(ctx); err != nil {
+		return nil, err
+	}
+	if err := wh.state.limiterAPI.wait(ctx); err != nil {
+		return nil, err
+	}
+	if err := wh.state.limiterWebhook.wait(ctx); err != nil {
+		return nil, err
+	}
 	// Check again, because a global 429 may have occurred while waiting.
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
+	ctx, cancel := context.WithTimeout(ctx, wh.client.httpTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
@@ -130,6 +164,9 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	wh.client.logger.Debug("request", "url", logURL, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			wh.state.limiterAPI.consume() // request may have been canceled after reaching Discord
+		}
 		return nil, redactError(err)
 	}
 	defer resp.Body.Close()
