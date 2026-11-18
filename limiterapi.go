@@ -1,7 +1,9 @@
 package dhook
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,23 +17,29 @@ type limiterAPI struct {
 }
 
 // wait will wait until a free slot is available if necessary
-// and report whether it has waited.
-func (l *limiterAPI) wait() bool {
+func (l *limiterAPI) wait(ctx context.Context) error {
 	l.logger.Debug("API rate limit", "info", l.rl)
 	if !l.rl.limitExceeded(time.Now()) {
-		return false
+		return nil
 	}
 	retryAfter := roundUpDuration(time.Until(l.rl.resetAt), time.Second)
+	if err := checkDeadline(ctx, retryAfter); err != nil {
+		return err
+	}
 	l.logger.Info("API rate limit exhausted. Waiting for reset", "retryAfter", retryAfter)
-	time.Sleep(retryAfter)
-	return true
+	return sleepContext(ctx, retryAfter)
+}
+
+// consume counts a request.
+func (l *limiterAPI) consume() {
+	if l.rl.remaining > 0 {
+		l.rl.remaining--
+	}
 }
 
 // updateFromHeader updates the limiter from a header.
 func (l *limiterAPI) updateFromHeader(h http.Header) error {
-	if l.rl.remaining > 0 {
-		l.rl.remaining--
-	}
+	l.consume()
 	rl2, err := newRateLimitInfo(h)
 	if err != nil {
 		return err
@@ -93,11 +101,11 @@ func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	if err != nil {
 		return r, wrapErr(err)
 	}
-	resetEpoch, err := strconv.Atoi(reset)
+	resetEpoch, err := strconv.ParseFloat(reset, 64)
 	if err != nil {
 		return r, wrapErr(err)
 	}
-	r.resetAt = time.Unix(int64(resetEpoch), 0).UTC()
+	r.resetAt = time.UnixMilli(int64(math.Round(resetEpoch * 1000))).UTC()
 	r.resetAfter, err = strconv.ParseFloat(resetAfter, 64)
 	if err != nil {
 		return r, wrapErr(err)

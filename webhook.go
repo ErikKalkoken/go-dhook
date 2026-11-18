@@ -7,12 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -58,11 +56,27 @@ type Webhook struct {
 }
 
 // webhookState holds the rate limit state shared by all webhooks for the same Discord webhook.
+// It is held for the whole execution of a request.
 type webhookState struct {
-	mu             sync.Mutex
+	sem            chan struct{} // capacity 1; works as context aware mutex
 	rl             rateLimited
 	limiterAPI     limiterAPI
 	limiterWebhook *limiter
+}
+
+// lock acquires the state or returns ctx.Err() when ctx is done first.
+func (st *webhookState) lock(ctx context.Context) error {
+	select {
+	case st.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlock releases the state.
+func (st *webhookState) unlock() {
+	<-st.sem
 }
 
 type WebhookExecuteOptions struct {
@@ -71,22 +85,33 @@ type WebhookExecuteOptions struct {
 	Wait bool
 }
 
-// Execute posts a message to the configured webhook and optionally returns the message created by Discord.
+// Execute posts a message to the configured webhook similar to ExecuteContext,
+// but is not context aware.
+func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+	return wh.ExecuteContext(context.Background(), message, opt)
+}
+
+// ExecuteContext posts a message to the configured webhook
+// and optionally returns the message created by Discord.
 //
 // Options can be provided through opt or opt can be nil for executing without options.
-// Execute will only return a response from Discord (e.g. the message created) when the Wait option is enabled.
+// A response from Discord (e.g. the message created) is only returned when the Wait option is enabled.
 //
-// Execute will automatically comply with Discord's rate limits by waiting
+// Discord's rate limits are automatically complied with by waiting
 // until there is a free slot to post the message if necessary.
 //
-// Execute will check that a message is not empty, but not do a full validation.
+// The message is checked for being not empty, but not fully validated.
 // A full validation can be performed with [Message.Validate].
 //
 // Common errors returned:
 //   - [HTTPError]: Discord returned HTTP status codes of 400 or above (except 429)
 //   - [TooManyRequestsError]: Discord returned status HTTP status code 429
-//   - [context.DeadlineExceeded]: Timeout is exceeded during the HTTP request to Discord
-func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+//   - [context.Canceled]: ctx was canceled
+//   - [context.DeadlineExceeded]: ctx deadline or HTTP timeout exceeded, incl. while waiting for a rate limit
+func (wh *Webhook) ExecuteContext(ctx context.Context, message Message, opt *WebhookExecuteOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if wh.client == nil {
 		return nil, fmt.Errorf("Webhook not initialized: %w", ErrInvalidConfiguration)
 	}
@@ -101,20 +126,28 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
-	wh.state.mu.Lock()
-	defer wh.state.mu.Unlock()
+	if err := wh.state.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer wh.state.unlock()
 	if isActive, retryAfter := wh.state.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter}
 	}
-	wh.client.limiterGlobal.wait()
-	wh.state.limiterAPI.wait()
-	wh.state.limiterWebhook.wait()
+	if err := wh.client.limiterGlobal.wait(ctx); err != nil {
+		return nil, err
+	}
+	if err := wh.state.limiterAPI.wait(ctx); err != nil {
+		return nil, err
+	}
+	if err := wh.state.limiterWebhook.wait(ctx); err != nil {
+		return nil, err
+	}
 	// Check again, because a global 429 may have occurred while waiting.
 	if isActive, retryAfter := wh.client.rl.getOrReset(); isActive {
 		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: true}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), wh.client.httpTimeout)
+	ctx, cancel := context.WithTimeout(ctx, wh.client.httpTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", wh.url, bytes.NewBuffer(dat))
 	if err != nil {
@@ -130,11 +163,27 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	wh.client.logger.Debug("request", "url", logURL, "body", string(dat))
 	resp, err := wh.client.httpClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			wh.state.limiterAPI.consume() // request may have been canceled after reaching Discord
+		}
 		return nil, redactError(err)
 	}
 	defer resp.Body.Close()
 	if err := wh.state.limiterAPI.updateFromHeader(resp.Header); err != nil {
 		wh.client.logger.Error("Failed to update API limiter from header", "error", err)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		// Return early to ensure the rate limit is recorded even when the body can not be read.
+		wh.client.logger.Warn("response", "url", logURL, "status", resp.Status, "headers", resp.Header)
+		retryAfter, global, err := parseTooManyRequests(resp.Header)
+		if err != nil {
+			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
+		}
+		wh.state.rl.set(retryAfter)
+		if global {
+			wh.client.rl.set(retryAfter)
+		}
+		return nil, TooManyRequestsError{RetryAfter: retryAfter, Global: global}
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -146,24 +195,6 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 	} else {
 		wh.client.logger.Info("response", "url", logURL, "status", resp.Status)
 	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		var m tooManyRequestsResponse
-		if err := json.Unmarshal(body, &m); err != nil {
-			wh.client.logger.Warn("Failed to parse 429 response body", "error", err)
-		}
-		retryAfter, err := parseRetryAfter(resp.Header, m)
-		if err != nil {
-			wh.client.logger.Warn("Failed to parse retry after. Assuming default", "error", err)
-		}
-		wh.state.rl.set(retryAfter)
-		if m.Global {
-			wh.client.rl.set(retryAfter)
-		}
-		return body, TooManyRequestsError{
-			RetryAfter: retryAfter,
-			Global:     m.Global,
-		}
-	}
 	if resp.StatusCode >= 400 {
 		err := HTTPError{
 			Status:  resp.StatusCode,
@@ -172,12 +203,6 @@ func (wh *Webhook) Execute(message Message, opt *WebhookExecuteOptions) ([]byte,
 		return nil, err
 	}
 	return body, nil
-}
-
-type tooManyRequestsResponse struct {
-	Message    string  `json:"message,omitempty"`
-	RetryAfter float64 `json:"retry_after,omitempty"`
-	Global     bool    `json:"global,omitempty"`
 }
 
 // redactURL returns url with the webhook token replaced.
@@ -194,16 +219,28 @@ func redactError(err error) error {
 	return err
 }
 
-// parseRetryAfter returns how long to wait after a 429 response.
-func parseRetryAfter(h http.Header, m tooManyRequestsResponse) (time.Duration, error) {
-	secs := math.Ceil(m.RetryAfter)
-	x, err := strconv.Atoi(h.Get("Retry-After"))
-	if err != nil || x <= 0 {
-		if secs <= 0 {
-			return retryAfterTooManyRequestDefault, errors.New("no valid retry after in response")
-		}
-		x = 0
+// parseTooManyRequests returns how long to wait after a 429 response
+// and whether the rate limit is global.
+// A 429 without Discord rate limit headers (e.g. from Cloudflare) is treated as global.
+// Retry-After can be given in seconds or as an HTTP date.
+func parseTooManyRequests(h http.Header) (time.Duration, bool, error) {
+	scope := h.Get("X-RateLimit-Scope")
+	isGlobal := h.Get("X-RateLimit-Global")
+	hasDiscordHeader := scope != "" || isGlobal != "" || h.Get("X-RateLimit-Bucket") != ""
+	global := isGlobal == "true" || scope == "global" || !hasDiscordHeader
+	v := h.Get("Retry-After")
+	if secs, err := strconv.Atoi(v); (err == nil || errors.Is(err, strconv.ErrRange)) && secs > 0 {
+		secs = min(secs, int(retryAfterMax.Seconds()))
+		return time.Duration(secs) * time.Second, global, nil
 	}
-	secs = min(max(secs, float64(x)), retryAfterMax.Seconds())
-	return time.Duration(secs) * time.Second, nil
+	if t, err := http.ParseTime(v); err == nil {
+		now := time.Now()
+		if sd, err := http.ParseTime(h.Get("Date")); err == nil {
+			now = sd // server time; avoids clock skew
+		}
+		if d := roundUpDuration(t.Sub(now), time.Second); d > 0 {
+			return min(d, retryAfterMax), global, nil
+		}
+	}
+	return retryAfterTooManyRequestDefault, global, errors.New("no valid retry after in response")
 }

@@ -68,10 +68,12 @@ go-dhook respects three rate limits that apply to webhooks:
 3. **Webhook**: an undocumented limit of 30 requests per 60 seconds
 
 All three are active by default. `Execute` blocks until a request can be sent within them.
+Use `ExecuteContext` to limit how long to wait, e.g. with a timeout or cancellation.
 
 If Discord still responds with 429, subsequent requests fail immediately with a
 `TooManyRequestsError` until the `Retry-After` time has passed. This prevents
-escalating the rate limit.
+escalating the rate limit. A global 429, or a 429 without Discord's rate limit
+headers (e.g. from Cloudflare), blocks all webhooks of the client.
 
 ## Documentation
 

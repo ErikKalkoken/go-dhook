@@ -1,6 +1,7 @@
 package dhook
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRateLimitInfo_New(t *testing.T) {
@@ -27,6 +29,18 @@ func TestRateLimitInfo_New(t *testing.T) {
 			assert.Equal(t, "abcd1234", rl.bucket)
 		}
 	})
+	t.Run("should extract fractional reset from header", func(t *testing.T) {
+		header := http.Header{}
+		header.Set("X-RateLimit-Limit", "5")
+		header.Set("X-RateLimit-Remaining", "1")
+		header.Set("X-RateLimit-Reset", "1470173023.123")
+		header.Set("X-RateLimit-Reset-After", "1.2")
+		header.Set("X-RateLimit-Bucket", "abcd1234")
+		rl, err := newRateLimitInfo(header)
+		if assert.NoError(t, err) {
+			assert.Equal(t, time.Date(2016, 8, 2, 21, 23, 43, 123000000, time.UTC), rl.resetAt)
+		}
+	})
 	t.Run("should return empty rate limit if header is incomplete", func(t *testing.T) {
 		header := http.Header{}
 		rl, err := newRateLimitInfo(header)
@@ -42,6 +56,7 @@ func TestRateLimitInfo_NewErrorValidation(t *testing.T) {
 		isValid                                     bool
 	}{
 		{limit: "5", remaining: "1", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: true},
+		{limit: "5", remaining: "1", reset: "1470173023.123", resetAfter: "1.2", bucket: "abcd1234", isValid: true},
 		{limit: "x", remaining: "1", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
 		{limit: "5", remaining: "x", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
 		{limit: "5", remaining: "1", reset: "x", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
@@ -167,6 +182,16 @@ func TestLimiterAPI_UpdateFromHeader2(t *testing.T) {
 			bucket:     "abcd9234",
 			want:       4,
 		},
+		{
+			name:       "should update when header has fractional reset",
+			current:    rateLimitInfo{remaining: 2, resetAt: time.Unix(1470173022, 0).UTC(), bucket: "abcd1234"},
+			limit:      "5",
+			remaining:  "4",
+			reset:      "1470173023.123",
+			resetAfter: "1.123",
+			bucket:     "abcd1234",
+			want:       4,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,14 +226,41 @@ func TestLimiterAPI_Wait(t *testing.T) {
 	t.Run("should not wait if limit not exceeded", func(t *testing.T) {
 		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 1}}
 		l.logger = slog.Default()
-		got := l.wait()
-		assert.False(t, got)
+		start := time.Now()
+		err := l.wait(t.Context())
+		require.NoError(t, err)
+		assert.Less(t, time.Since(start), time.Millisecond*10)
 	})
 	t.Run("should wait if limit is exceeded", func(t *testing.T) {
 		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 0, resetAt: time.Now().Add(200 * time.Millisecond)}}
 		l.logger = slog.Default()
-		got := l.wait()
-		assert.True(t, got)
+		start := time.Now()
+		err := l.wait(t.Context())
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, time.Since(start), time.Second*1)
+	})
+	t.Run("should return error when context deadline is exceeded while waiting", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{timestamp: time.Now(), remaining: 0, resetAt: time.Now().Add(2 * time.Second)}}
+		l.logger = slog.Default()
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		err := l.wait(ctx)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
+	})
+}
+
+func TestLimiterAPI_Consume(t *testing.T) {
+	t.Run("should decrease remaining", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{remaining: 2}}
+		l.consume()
+		assert.Equal(t, 1, l.rl.remaining)
+	})
+	t.Run("should not decrease remaining below zero", func(t *testing.T) {
+		l := limiterAPI{rl: rateLimitInfo{remaining: 0}}
+		l.consume()
+		assert.Equal(t, 0, l.rl.remaining)
 	})
 }
 
