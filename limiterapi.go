@@ -3,6 +3,7 @@ package dhook
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -100,11 +101,11 @@ func newRateLimitInfo(h http.Header) (rateLimitInfo, error) {
 	if err != nil {
 		return r, wrapErr(err)
 	}
-	resetEpoch, err := strconv.Atoi(reset)
+	resetEpoch, err := strconv.ParseFloat(reset, 64)
 	if err != nil {
 		return r, wrapErr(err)
 	}
-	r.resetAt = time.Unix(int64(resetEpoch), 0).UTC()
+	r.resetAt = time.UnixMilli(int64(math.Round(resetEpoch * 1000))).UTC()
 	r.resetAfter, err = strconv.ParseFloat(resetAfter, 64)
 	if err != nil {
 		return r, wrapErr(err)

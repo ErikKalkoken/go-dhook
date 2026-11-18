@@ -29,6 +29,18 @@ func TestRateLimitInfo_New(t *testing.T) {
 			assert.Equal(t, "abcd1234", rl.bucket)
 		}
 	})
+	t.Run("should extract fractional reset from header", func(t *testing.T) {
+		header := http.Header{}
+		header.Set("X-RateLimit-Limit", "5")
+		header.Set("X-RateLimit-Remaining", "1")
+		header.Set("X-RateLimit-Reset", "1470173023.123")
+		header.Set("X-RateLimit-Reset-After", "1.2")
+		header.Set("X-RateLimit-Bucket", "abcd1234")
+		rl, err := newRateLimitInfo(header)
+		if assert.NoError(t, err) {
+			assert.Equal(t, time.Date(2016, 8, 2, 21, 23, 43, 123000000, time.UTC), rl.resetAt)
+		}
+	})
 	t.Run("should return empty rate limit if header is incomplete", func(t *testing.T) {
 		header := http.Header{}
 		rl, err := newRateLimitInfo(header)
@@ -44,6 +56,7 @@ func TestRateLimitInfo_NewErrorValidation(t *testing.T) {
 		isValid                                     bool
 	}{
 		{limit: "5", remaining: "1", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: true},
+		{limit: "5", remaining: "1", reset: "1470173023.123", resetAfter: "1.2", bucket: "abcd1234", isValid: true},
 		{limit: "x", remaining: "1", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
 		{limit: "5", remaining: "x", reset: "1470173023", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
 		{limit: "5", remaining: "1", reset: "x", resetAfter: "1.2", bucket: "abcd1234", isValid: false},
@@ -167,6 +180,16 @@ func TestLimiterAPI_UpdateFromHeader2(t *testing.T) {
 			reset:      "1470173022",
 			resetAfter: "1.2",
 			bucket:     "abcd9234",
+			want:       4,
+		},
+		{
+			name:       "should update when header has fractional reset",
+			current:    rateLimitInfo{remaining: 2, resetAt: time.Unix(1470173022, 0).UTC(), bucket: "abcd1234"},
+			limit:      "5",
+			remaining:  "4",
+			reset:      "1470173023.123",
+			resetAfter: "1.123",
+			bucket:     "abcd1234",
 			want:       4,
 		},
 	}
